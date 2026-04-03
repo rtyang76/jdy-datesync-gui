@@ -1,0 +1,297 @@
+{
+  "products": {
+    "V40": {
+      "file_system": "FAT32",
+      "vid": "21C4",
+      "pid": "0CC7",
+      "vendor_str": "Lexar",
+      "inquiry_vendor": "Lexar",
+      "product_str": "USB Flash Drive",
+      "inquiry_product": "USB Flash Drive",
+      "volume_name": "Lexar",
+      "file_system_512gb_plus": "exFAT"
+    },
+    "TT2": {
+      "file_system": "FAT32",
+      "vid": "21C4",
+      "pid": "0CC7",
+      "vendor_str": "Lexar",
+      "inquiry_vendor": "Lexar",
+      "product_str": "USB Flash Drive",
+      "inquiry_product": "USB Flash Drive",
+      "volume_name": "Lexar"
+    },
+    "S60": {
+      "file_system": "FAT32",
+      "vid": "21C4",
+      "pid": "0CC7",
+      "vendor_str": "Lexar",
+      "inquiry_vendor": "Lexar",
+      "product_str": "USB Flash Drive",
+      "inquiry_product": "USB Flash Drive",
+      "volume_name": "Lexar"
+    },
+    "M25": {
+      "file_system": "FAT32",
+      "vid": "21C4",
+      "pid": "0CC7",
+      "vendor_str": "Lexar",
+      "inquiry_vendor": "Lexar",
+      "product_str": "USB Flash Drive",
+      "inquiry_product": "USB Flash Drive",
+      "volume_name": "Lexar"
+    },
+    "M22": {
+      "file_system": "FAT32",
+      "vid": "21C4",
+      "pid": "0CC7",
+      "vendor_str": "Lexar",
+      "inquiry_vendor": "Lexar",
+      "product_str": "USB Flash Drive",
+      "inquiry_product": "USB Flash Drive",
+      "volume_name": "Lexar"
+    },
+    "E21": {
+      "file_system": "FAT32",
+      "vid": "21C4",
+      "pid": "0CC7",
+      "vendor_str": "Lexar",
+      "inquiry_vendor": "Lexar",
+      "product_str": "USB Flash Drive",
+      "inquiry_product": "USB Flash Drive",
+      "volume_name": "Lexar"
+    },
+    "P30": {
+      "file_system": "exFAT",
+      "vid": "21C4",
+      "pid": "0CD1",
+      "vendor_str": "Lexar",
+      "inquiry_vendor": "Lexar",
+      "product_str": "USB Flash Drive",
+      "inquiry_product": "USB Flash Drive",
+      "volume_name": "Lexar"
+    },
+    "D40T": {
+      "file_system": "exFAT",
+      "vid": "21C4",
+      "pid": "0809",
+      "vendor_str": "Lexar",
+      "inquiry_vendor": "Lexar",
+      "product_str": "USB Flash Drive",
+      "inquiry_product": "USB Flash Drive",
+      "volume_name": "Lexar"
+    },
+    "S47": {
+      "file_system": "FAT32",
+      "vid": "21C4",
+      "pid": "0CD1",
+      "vendor_str": "Lexar",
+      "inquiry_vendor": "Lexar",
+      "product_str": "USB Flash Drive",
+      "inquiry_product": "USB Flash Drive",
+      "volume_name": "Lexar"
+    },
+    "M45": {
+      "file_system": "FAT32",
+      "vid": "21C4",
+      "pid": "0CD1",
+      "vendor_str": "Lexar",
+      "inquiry_vendor": "Lexar",
+      "product_str": "USB Flash Drive",
+      "inquiry_product": "USB Flash Drive",
+      "volume_name": "Lexar"
+    },
+    "M900": {
+      "file_system": "FAT32",
+      "vid": "21C4",
+      "pid": "0CD1",
+      "vendor_str": "Lexar",
+      "inquiry_vendor": "Lexar",
+      "product_str": "USB Flash Drive",
+      "inquiry_product": "USB Flash Drive",
+      "volume_name": "Lexar"
+    },
+    "F35": {
+      "file_system": "FAT32",
+      "vid": "21C4",
+      "pid": "20BD",
+      "vendor_str": "Lexar",
+      "inquiry_vendor": "Lexar",
+      "product_str": "Lexar F35",
+      "inquiry_product": "Lexar F35",
+      "volume_name": "Lexar(for CD Drive)"
+    },
+    "F35 PRO": {
+      "file_system": "FAT32",
+      "vid": "21C4",
+      "pid": "20BD",
+      "vendor_str": "Lexar",
+      "inquiry_vendor": "Lexar",
+      "product_str": "Lexar F35 PRO",
+      "inquiry_product": "Lexar F35 PRO",
+      "volume_name": "Lexar(for CD Drive)"
+    },
+    "D35c": {
+      "file_system": "FAT32",
+      "vid": "21C4",
+      "pid": "0809",
+      "vendor_str": "Lexar",
+      "inquiry_vendor": "Lexar",
+      "product_str": "USB Flash Drive",
+      "inquiry_product": "USB Flash Drive",
+      "volume_name": "Lexar"
+    },
+    "E32c": {
+      "file_system": "FAT32",
+      "vid": "21C4",
+      "pid": "0809",
+      "vendor_str": "Lexar",
+      "inquiry_vendor": "Lexar",
+      "product_str": "USB Flash Drive",
+      "inquiry_product": "USB Flash Drive",
+      "volume_name": "Lexar"
+    },
+    "D400": {
+      "file_system": "FAT32",
+      "vid": "21C4",
+      "pid": "0809",
+      "vendor_str": "Lexar",
+      "inquiry_vendor": "Lexar",
+      "product_str": "USB Flash Drive",
+      "inquiry_product": "USB Flash Drive",
+      "volume_name": "Lexar",
+      "file_system_512gb_plus": "exFAT"
+    },
+    "D300": {
+      "file_system": "FAT32",
+      "vid": "21C4",
+      "pid": "0809",
+      "vendor_str": "Lexar",
+      "inquiry_vendor": "Lexar",
+      "product_str": "USB Flash Drive",
+      "inquiry_product": "USB Flash Drive",
+      "volume_name": "Lexar"
+    },
+    "D40E": {
+      "file_system": "FAT32",
+      "vid": "21C4",
+      "pid": "0809",
+      "vendor_str": "Lexar",
+      "inquiry_vendor": "Lexar",
+      "product_str": "USB Flash Drive",
+      "inquiry_product": "USB Flash Drive",
+      "volume_name": "Lexar"
+    },
+    "V400": {
+      "file_system": "FAT32",
+      "vid": "21C4",
+      "pid": "0CD1",
+      "vendor_str": "Lexar",
+      "inquiry_vendor": "Lexar",
+      "product_str": "USB Flash Drive",
+      "inquiry_product": "USB Flash Drive",
+      "volume_name": "Lexar"
+    },
+    "M400": {
+      "file_system": "FAT32",
+      "vid": "21C4",
+      "pid": "0CD1",
+      "vendor_str": "Lexar",
+      "inquiry_vendor": "Lexar",
+      "product_str": "USB Flash Drive",
+      "inquiry_product": "USB Flash Drive",
+      "volume_name": "Lexar"
+    },
+    "S57": {
+      "file_system": "FAT32",
+      "vid": "21C4",
+      "pid": "0CD1",
+      "vendor_str": "Lexar",
+      "inquiry_vendor": "Lexar",
+      "product_str": "USB Flash Drive",
+      "inquiry_product": "USB Flash Drive",
+      "volume_name": "Lexar"
+    },
+    "S80": {
+      "file_system": "FAT32",
+      "vid": "21C4",
+      "pid": "0CD1",
+      "vendor_str": "Lexar",
+      "inquiry_vendor": "Lexar",
+      "product_str": "USB Flash Drive",
+      "inquiry_product": "USB Flash Drive",
+      "volume_name": "Lexar",
+      "file_system_512gb_plus": "exFAT"
+    },
+    "V100": {
+      "file_system": "FAT32",
+      "vid": "21C4",
+      "pid": "0CD1",
+      "vendor_str": "Lexar",
+      "inquiry_vendor": "Lexar",
+      "product_str": "USB Flash Drive",
+      "inquiry_product": "USB Flash Drive",
+      "volume_name": "Lexar"
+    },
+    "E31": {
+      "file_system": "FAT32",
+      "vid": "21C4",
+      "pid": "0CD1",
+      "vendor_str": "Lexar",
+      "inquiry_vendor": "Lexar",
+      "product_str": "USB Flash Drive",
+      "inquiry_product": "USB Flash Drive",
+      "volume_name": "Lexar"
+    },
+    "M35": {
+      "file_system": "FAT32",
+      "vid": "21C4",
+      "pid": "0CD1",
+      "vendor_str": "Lexar",
+      "inquiry_vendor": "Lexar",
+      "product_str": "USB Flash Drive",
+      "inquiry_product": "USB Flash Drive",
+      "volume_name": "Lexar"
+    },
+    "A30E": {
+      "file_system": "FAT32",
+      "vid": "21C4",
+      "pid": "0CD1",
+      "vendor_str": "Lexar",
+      "inquiry_vendor": "Lexar",
+      "product_str": "USB Flash Drive",
+      "inquiry_product": "USB Flash Drive",
+      "volume_name": "Lexar"
+    },
+    "A50V": {
+      "file_system": "exFAT",
+      "vid": "21C4",
+      "pid": "0CD2",
+      "vendor_str": "Lexar",
+      "inquiry_vendor": "Lexar",
+      "product_str": "USB Flash Drive",
+      "inquiry_product": "USB Flash Drive",
+      "volume_name": "Lexar"
+    },
+    "C50V": {
+      "file_system": "exFAT",
+      "vid": "21C4",
+      "pid": "0CD3",
+      "vendor_str": "Lexar",
+      "inquiry_vendor": "Lexar",
+      "product_str": "USB Flash Drive",
+      "inquiry_product": "USB Flash Drive",
+      "volume_name": "Lexar"
+    },
+    "中性": {
+      "file_system": "FAT32",
+      "vid": "8644",
+      "pid": "8008",
+      "vendor_str": "General",
+      "inquiry_vendor": "General",
+      "product_str": "USB Disk",
+      "inquiry_product": "USB Disk",
+      "volume_name": ""
+    }
+  }
+}

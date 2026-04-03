@@ -1,0 +1,31 @@
+{
+  "main_fields": {
+    "sid": "_widget_1756190493399",
+    "osp_code": "_widget_1756190493400",
+    "tran_date": "_widget_1756190493401",
+    "asn_num": "_widget_1756190493402",
+    "vendor_name": "_widget_1756190493403",
+    "po_num": "_widget_1756190493404",
+    "comments": "_widget_1756190493405",
+    "delivery_details": "_widget_1756190493406"
+  },
+  "sub_tables": {
+    "delivery_details": {
+      "line_num": "_widget_1756190493408",
+      "item_num": "_widget_1756190493409",
+      "lot_flag": "_widget_1756190493410",
+      "item_pn": "_widget_1756190493411",
+      "item_desc": "_widget_1756190493412",
+      "qty": "_widget_1756190493413",
+      "delivery_date": "_widget_1756190493414",
+      "asn_line": "_widget_1756190493415",
+      "plant_code": "_widget_1756190493416",
+      "warehouse_code": "_widget_1756190493417",
+      "product_line": "_widget_1756190493418",
+      "comments": "_widget_1756190493419",
+      "attribute1": "_widget_1756190493420",
+      "attribute2": "_widget_1756190493421",
+      "attribute3": "_widget_1756190493422"
+    }
+  }
+}

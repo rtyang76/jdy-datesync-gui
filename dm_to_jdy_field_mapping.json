@@ -1,0 +1,53 @@
+{
+  "comment": "DM数据同步到简道云的字段映射配置",
+  "main_fields": {
+    "order_no": "_widget_1770078767290",
+    "month_settlement": "_widget_1770078767289",
+    "factory": "_widget_1770078767291",
+    "person_in_charge": "_widget_1770078767292",
+    "currency": "_widget_1770078767293",
+    "mark": "_widget_1770078767294",
+    "tax_rate": "_widget_1770078767295",
+    "payment_terms": "_widget_1770078767296",
+    "remarks": "_widget_1770078767318",
+    "in_warehouse": "_widget_1770078767297",
+    "material_warehouse": "_widget_1770078767298",
+    "original_terms": "_widget_1770078767299",
+    "total_quantity": "_widget_1770079954343",
+    "total_tax_amount": "_widget_1770079954344",
+    "department": "_widget_1770079256137",
+    "creator": "_widget_1770079256138",
+    "auditor": "_widget_1770079256139",
+    "approver": "_widget_1770079256140",
+    "submit_time": "_widget_1770079954347",
+    "modify_time": "_widget_1770079954348",
+    "order_status": "_widget_1770079954349",
+    "order_details": "_widget_1770078767303",
+    "i_ord": "_widget_1775107266914",
+    "fill_date": "_widget_1775107266915",
+    "price_book": "_widget_1775107266916",
+    "responsible_department": "_widget_1775107266917",
+    "current_payment_date": "_widget_1775107266918",
+    "original_payment_date": "_widget_1775107266919",
+    "document_type": "_widget_1775107266920"
+  },
+  "sub_tables": {
+    "order_details": {
+      "line_no": "_widget_1770078767305",
+      "order_no": "_widget_1770078767306",
+      "material_code": "_widget_1770078767307",
+      "material_desc": "_widget_1770078767308",
+      "quantity": "_widget_1770078767309",
+      "unit_price": "_widget_1770078767310",
+      "tax_unit_price": "_widget_1770078767311",
+      "tax_amount": "_widget_1770078767312",
+      "price_book": "_widget_1770078767313",
+      "suggested_quantity": "_widget_1770078767314",
+      "source_doc_no": "_widget_1770078767316",
+      "i_ord": "_widget_1775107266922",
+      "same_auxiliary": "_widget_1775107266923",
+      "update_mark": "_widget_1775107266924",
+      "expand_mark": "_widget_1775107266925"
+    }
+  }
+}
