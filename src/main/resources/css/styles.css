@@ -1,0 +1,223 @@
+.root {
+    -fx-font-family: "Microsoft YaHei", "PingFang SC", "Helvetica Neue", sans-serif;
+    -fx-font-size: 13;
+    -fx-background-color: #f5f5f5;
+}
+
+.sidebar {
+    -fx-background-color: #1e293b;
+    -fx-border-color: transparent;
+}
+
+.sidebar-title {
+    -fx-text-fill: #f8fafc;
+    -fx-font-size: 16;
+    -fx-font-weight: bold;
+}
+
+.nav-button {
+    -fx-background-color: transparent;
+    -fx-text-fill: #94a3b8;
+    -fx-font-size: 14;
+    -fx-cursor: hand;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+}
+
+.nav-button:hover {
+    -fx-background-color: #334155;
+    -fx-text-fill: #e2e8f0;
+}
+
+.nav-button:selected {
+    -fx-background-color: #3b82f6;
+    -fx-text-fill: #ffffff;
+    -fx-font-weight: bold;
+}
+
+.version-label {
+    -fx-text-fill: #64748b;
+    -fx-font-size: 11;
+    -fx-alignment: center;
+}
+
+.page-title {
+    -fx-font-size: 22;
+    -fx-font-weight: bold;
+    -fx-text-fill: #1e293b;
+}
+
+.section-title {
+    -fx-font-size: 14;
+    -fx-font-weight: bold;
+    -fx-text-fill: #334155;
+}
+
+.description-label {
+    -fx-text-fill: #64748b;
+    -fx-font-size: 12;
+}
+
+.status-label {
+    -fx-font-size: 12;
+}
+
+.status-success {
+    -fx-text-fill: #16a34a;
+    -fx-font-weight: bold;
+}
+
+.status-error {
+    -fx-text-fill: #dc2626;
+    -fx-font-weight: bold;
+}
+
+.btn-primary {
+    -fx-background-color: #3b82f6;
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+    -fx-padding: 8 20;
+    -fx-background-radius: 6;
+    -fx-cursor: hand;
+}
+
+.btn-primary:hover {
+    -fx-background-color: #2563eb;
+}
+
+.btn-secondary {
+    -fx-background-color: #e2e8f0;
+    -fx-text-fill: #334155;
+    -fx-padding: 8 16;
+    -fx-background-radius: 6;
+    -fx-cursor: hand;
+}
+
+.btn-secondary:hover {
+    -fx-background-color: #cbd5e1;
+}
+
+.btn-danger {
+    -fx-background-color: #fee2e2;
+    -fx-text-fill: #dc2626;
+    -fx-padding: 8 16;
+    -fx-background-radius: 6;
+    -fx-cursor: hand;
+}
+
+.btn-danger:hover {
+    -fx-background-color: #fecaca;
+}
+
+.text-field, .password-field, .combo-box, .spinner {
+    -fx-background-color: white;
+    -fx-border-color: #e2e8f0;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-padding: 6 10;
+}
+
+.text-field:focused, .password-field:focused {
+    -fx-border-color: #3b82f6;
+}
+
+.text-area {
+    -fx-background-color: #1e1e1e;
+    -fx-text-fill: #d4d4d4;
+    -fx-border-color: #333333;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-font-family: "Monaco", "Consolas", monospace;
+}
+
+.table-view {
+    -fx-background-color: white;
+    -fx-border-color: #e2e8f0;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+}
+
+.table-view .column-header-background {
+    -fx-background-color: #f8fafc;
+}
+
+.table-row-cell:selected {
+    -fx-background-color: #dbeafe;
+}
+
+.list-view {
+    -fx-background-color: white;
+    -fx-border-color: #e2e8f0;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+}
+
+.list-cell:selected {
+    -fx-background-color: #dbeafe;
+    -fx-text-fill: #1e293b;
+}
+
+.file-path-label {
+    -fx-text-fill: #64748b;
+    -fx-font-size: 11;
+    -fx-font-style: italic;
+}
+
+.log-count-label {
+    -fx-text-fill: #64748b;
+    -fx-font-size: 11;
+}
+
+.check-box {
+    -fx-text-fill: #334155;
+}
+
+.grid-pane .label {
+    -fx-text-fill: #475569;
+}
+
+.breadcrumb-bar {
+    -fx-background-color: #f0f9ff;
+    -fx-border-color: #bae6fd;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-padding: 8 12;
+}
+
+.breadcrumb-link {
+    -fx-text-fill: #0369a1;
+    -fx-font-size: 12;
+    -fx-font-weight: bold;
+    -fx-underline: false;
+    -fx-cursor: hand;
+    -fx-padding: 0;
+}
+
+.breadcrumb-link:hover {
+    -fx-text-fill: #0284c7;
+    -fx-underline: true;
+}
+
+.breadcrumb-arrow {
+    -fx-text-fill: #94a3b8;
+    -fx-font-size: 12;
+}
+
+.breadcrumb-label {
+    -fx-text-fill: #475569;
+    -fx-font-size: 12;
+}
+
+.watermark-bar {
+    -fx-background-color: #fefce8;
+    -fx-border-color: #fde047;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-padding: 8 12;
+}
+
+.watermark-label {
+    -fx-text-fill: #854d0e;
+    -fx-font-size: 12;
+    -fx-font-weight: bold;
+}
