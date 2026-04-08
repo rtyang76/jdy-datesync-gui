@@ -40,15 +40,31 @@ public class SyncEngine {
         }
 
         List<DataSourceConfig> dataSources = configManager.loadDataSources();
+
+        FormMappingConfig formMapping;
+        if (task.getFormMappingId() != null && !task.getFormMappingId().isEmpty()) {
+            formMapping = configManager.findFormMappingById(task.getFormMappingId());
+            if (formMapping == null) {
+                return new SyncResult(false, "表单映射配置不存在: " + task.getFormMappingId());
+            }
+        } else if (task.hasLegacyFields()) {
+            formMapping = buildLegacyFormMapping(task);
+            if (formMapping == null) {
+                return new SyncResult(false, "无法从旧任务配置构建表单映射");
+            }
+        } else {
+            return new SyncResult(false, "任务未关联表单映射配置");
+        }
+
         DataSourceConfig ds = dataSources.stream()
-                .filter(d -> d.getId().equals(task.getDataSourceId()))
+                .filter(d -> d.getId().equals(formMapping.getDataSourceId()))
                 .findFirst().orElse(null);
 
         if (ds == null) {
-            return new SyncResult(false, "数据源不存在: " + task.getDataSourceId());
+            return new SyncResult(false, "数据源不存在: " + formMapping.getDataSourceId());
         }
 
-        JdyAppConfig jdyConfig = configManager.findJdyAppById(task.getJdyAppId());
+        JdyAppConfig jdyConfig = configManager.findJdyAppById(formMapping.getJdyAppId());
         if (jdyConfig == null) {
             return new SyncResult(false, "简道云应用未配置或已删除");
         }
@@ -56,38 +72,52 @@ public class SyncEngine {
             return new SyncResult(false, "简道云应用 API Token 未配置: " + jdyConfig.getName());
         }
 
-        Map<String, String> fieldMapping = task.getFieldMapping();
-        if (fieldMapping == null || fieldMapping.isEmpty()) {
-            return new SyncResult(false, "字段映射未配置");
+        Map<String, String> mainMapping = formMapping.getMainFieldMapping();
+        if (mainMapping == null || mainMapping.isEmpty()) {
+            return new SyncResult(false, "主表字段映射未配置");
         }
 
-        Map<String, String> activeMapping = new LinkedHashMap<>();
-        fieldMapping.forEach((k, v) -> {
+        Map<String, String> activeMainMapping = new LinkedHashMap<>();
+        mainMapping.forEach((k, v) -> {
             if (v != null && !v.trim().isEmpty()) {
-                activeMapping.put(k, v.trim());
+                activeMainMapping.put(k, v.trim());
             }
         });
 
-        if (activeMapping.isEmpty()) {
-            return new SyncResult(false, "没有配置任何有效的字段映射");
+        if (activeMainMapping.isEmpty()) {
+            return new SyncResult(false, "没有配置任何有效的主表字段映射");
         }
 
         SyncProgress progress = configManager.loadSyncProgress();
         String lastSyncIdStr = progress.getLastSyncId(taskId);
         long lastSyncId = parseLongSafe(lastSyncIdStr);
 
-        logger.info("开始同步任务: " + task.getName() + " | 表: " + task.getSourceTable() + " | 上次同步ID: " + lastSyncId);
+        logger.info("开始同步任务: " + task.getName() + " | 主表: " + formMapping.getMainTableName() + " | 上次同步ID: " + lastSyncId);
 
         try {
-            return syncData(ds, task, activeMapping, lastSyncId, progress, jdyConfig);
+            return syncData(ds, task, formMapping, activeMainMapping, lastSyncId, progress, jdyConfig);
         } catch (Exception e) {
             logger.severe("同步任务异常: " + e.getMessage());
             return new SyncResult(false, "同步异常: " + e.getMessage());
         }
     }
 
+    private FormMappingConfig buildLegacyFormMapping(SyncTaskConfig task) {
+        if (task.getSourceTable() == null || task.getEntryId() == null) return null;
+        FormMappingConfig fm = new FormMappingConfig();
+        fm.setId("_legacy_" + task.getId());
+        fm.setDataSourceId(task.getDataSourceId());
+        fm.setJdyAppId(task.getJdyAppId());
+        fm.setMainTableName(task.getSourceTable());
+        fm.setMainEntryId(task.getEntryId());
+        fm.setMainFieldMapping(task.getFieldMapping() != null ? task.getFieldMapping() : new HashMap<>());
+        fm.setSubTableMappings(new ArrayList<>());
+        return fm;
+    }
+
     private SyncResult syncData(DataSourceConfig ds, SyncTaskConfig task,
-                                 Map<String, String> activeMapping, long lastSyncId,
+                                 FormMappingConfig formMapping,
+                                 Map<String, String> activeMainMapping, long lastSyncId,
                                  SyncProgress progress, JdyAppConfig jdyConfig) throws Exception {
 
         String incrementField = task.getIncrementField() != null && !task.getIncrementField().trim().isEmpty()
@@ -103,7 +133,7 @@ public class SyncEngine {
             while (true) {
                 String sql = String.format(
                         "SELECT * FROM `%s` WHERE `%s` > %d ORDER BY `%s` ASC LIMIT %d",
-                        task.getSourceTable(), incrementField, lastSyncId, incrementField, task.getMaxBatchSize());
+                        formMapping.getMainTableName(), incrementField, lastSyncId, incrementField, task.getMaxBatchSize());
 
                 logger.info("执行SQL: " + sql);
 
@@ -139,7 +169,7 @@ public class SyncEngine {
                     hadData = true;
                     logger.info("查询到 " + batchData.size() + " 条新数据");
 
-                    boolean pushSuccess = pushToJdy(jdyConfig, task.getEntryId(), batchData, activeMapping, task.getMaxRetry());
+                    boolean pushSuccess = pushToJdy(jdyConfig, formMapping, batchData, activeMainMapping, conn, task.getMaxRetry());
 
                     if (pushSuccess) {
                         totalSynced += batchData.size();
@@ -169,27 +199,63 @@ public class SyncEngine {
         }
     }
 
-    private boolean pushToJdy(JdyAppConfig jdyConfig, String entryId,
+    private boolean pushToJdy(JdyAppConfig jdyConfig, FormMappingConfig formMapping,
                                List<Map<String, Object>> batchData,
-                               Map<String, String> activeMapping, int maxRetry) {
+                               Map<String, String> activeMainMapping,
+                               Connection conn, int maxRetry) throws Exception {
 
         List<Map<String, Object>> jdyPayload = new ArrayList<>();
 
         for (Map<String, Object> row : batchData) {
             Map<String, Object> jdyRow = new LinkedHashMap<>();
-            for (Map.Entry<String, String> mapping : activeMapping.entrySet()) {
+
+            for (Map.Entry<String, String> mapping : activeMainMapping.entrySet()) {
                 String dbField = mapping.getKey();
                 String widgetId = mapping.getValue();
                 Object value = row.get(dbField);
                 jdyRow.put(widgetId, wrapValue(value));
             }
+
+            if (formMapping.getSubTableMappings() != null) {
+                for (SubTableMapping subMapping : formMapping.getSubTableMappings()) {
+                    if (subMapping.getSubTableName() == null || subMapping.getSubTableName().trim().isEmpty()) continue;
+                    if (subMapping.getFieldMapping() == null || subMapping.getFieldMapping().isEmpty()) continue;
+
+                    String joinField = subMapping.getJoinFieldName() != null && !subMapping.getJoinFieldName().trim().isEmpty()
+                            ? subMapping.getJoinFieldName() : "main_id";
+
+                    Object mainId = row.get("id");
+                    if (mainId == null) continue;
+
+                    List<Map<String, Object>> subRows = querySubTable(conn, subMapping.getSubTableName(), joinField, mainId.toString());
+
+                    List<Map<String, Object>> jdySubRows = new ArrayList<>();
+                    for (Map<String, Object> subRow : subRows) {
+                        Map<String, Object> jdySubRow = new LinkedHashMap<>();
+                        for (Map.Entry<String, String> subFieldMap : subMapping.getFieldMapping().entrySet()) {
+                            String dbField = subFieldMap.getKey();
+                            String widgetId = subFieldMap.getValue();
+                            Object value = subRow.get(dbField);
+                            jdySubRow.put(widgetId, wrapValue(value));
+                        }
+                        if (!jdySubRow.isEmpty()) {
+                            jdySubRows.add(jdySubRow);
+                        }
+                    }
+
+                    if (!jdySubRows.isEmpty()) {
+                        jdyRow.put(subMapping.getSubFormWidgetId(), jdySubRows);
+                    }
+                }
+            }
+
             jdyPayload.add(jdyRow);
         }
 
         try {
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("app_id", jdyConfig.getAppId());
-            body.put("entry_id", entryId);
+            body.put("entry_id", formMapping.getMainEntryId());
             body.put("data_list", jdyPayload);
             body.put("is_start_workflow", jdyConfig.isStartWorkflow());
 
@@ -198,26 +264,26 @@ public class SyncEngine {
 
             for (int attempt = 1; attempt <= maxRetry; attempt++) {
                 try {
-                    URL url = new URL(CREATE_URL);
-                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                    conn.setRequestMethod("POST");
-                    conn.setRequestProperty("Content-Type", "application/json");
+                    URL apiUrl = new URL(CREATE_URL);
+                    HttpURLConnection httpConn = (HttpURLConnection) apiUrl.openConnection();
+                    httpConn.setRequestMethod("POST");
+                    httpConn.setRequestProperty("Content-Type", "application/json");
                     String token = jdyConfig.getApiToken().trim();
                     if (!token.startsWith("Bearer ")) {
                         token = "Bearer " + token;
                     }
-                    conn.setRequestProperty("Authorization", token);
-                    conn.setRequestProperty("X-Request-ID", UUID.randomUUID().toString());
-                    conn.setConnectTimeout(15000);
-                    conn.setReadTimeout(30000);
-                    conn.setDoOutput(true);
+                    httpConn.setRequestProperty("Authorization", token);
+                    httpConn.setRequestProperty("X-Request-ID", UUID.randomUUID().toString());
+                    httpConn.setConnectTimeout(15000);
+                    httpConn.setReadTimeout(30000);
+                    httpConn.setDoOutput(true);
 
-                    conn.getOutputStream().write(jsonBody.getBytes("UTF-8"));
-                    conn.getOutputStream().flush();
-                    conn.getOutputStream().close();
+                    httpConn.getOutputStream().write(jsonBody.getBytes("UTF-8"));
+                    httpConn.getOutputStream().flush();
+                    httpConn.getOutputStream().close();
 
-                    int responseCode = conn.getResponseCode();
-                    InputStream is = responseCode == 200 ? conn.getInputStream() : conn.getErrorStream();
+                    int responseCode = httpConn.getResponseCode();
+                    InputStream is = responseCode == 200 ? httpConn.getInputStream() : httpConn.getErrorStream();
                     String response = readStream(is);
 
                     logger.info("简道云响应 [HTTP " + responseCode + "]: " + response);
@@ -242,6 +308,29 @@ public class SyncEngine {
         }
 
         return false;
+    }
+
+    private List<Map<String, Object>> querySubTable(Connection conn, String subTableName, String joinField, String mainId) throws Exception {
+        List<Map<String, Object>> result = new ArrayList<>();
+        String sql = String.format("SELECT * FROM `%s` WHERE `%s` = ?", subTableName, joinField);
+
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, mainId);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                ResultSetMetaData metaData = rs.getMetaData();
+                int columnCount = metaData.getColumnCount();
+
+                while (rs.next()) {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    for (int i = 1; i <= columnCount; i++) {
+                        row.put(metaData.getColumnName(i), rs.getObject(i));
+                    }
+                    result.add(row);
+                }
+            }
+        }
+
+        return result;
     }
 
     private Map<String, Object> wrapValue(Object value) {

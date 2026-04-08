@@ -6,11 +6,11 @@ import javafx.scene.Cursor;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
 import org.example.gui.model.DataSourceConfig;
+import org.example.gui.model.FormMappingConfig;
 import org.example.gui.model.JdyAppConfig;
 import org.example.gui.model.SyncProgress;
 import org.example.gui.model.SyncTaskConfig;
 import org.example.gui.service.ConfigManager;
-import org.example.gui.service.ConnectionTestService;
 import org.example.gui.service.SyncEngine;
 import org.example.gui.service.TaskScheduler;
 
@@ -28,11 +28,7 @@ public class SyncTaskPage {
     private final VBox root;
     private final TableView<SyncTaskConfig> taskTable;
     private final TextField nameField;
-    private final ComboBox<DataSourceConfig> dataSourceCombo;
-    private final ComboBox<JdyAppConfig> jdyAppCombo;
-    private final TextField sourceTableField;
-    private final Button loadTablesBtn;
-    private final TextField entryIdField;
+    private final ComboBox<FormMappingConfig> formMappingCombo;
     private final ComboBox<String> incrementModeCombo;
     private final TextField incrementFieldField;
     private final Spinner<Integer> intervalSpinner;
@@ -47,6 +43,7 @@ public class SyncTaskPage {
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
     private List<SyncTaskConfig> tasks;
+    private List<FormMappingConfig> formMappings;
     private List<DataSourceConfig> dataSources;
     private List<JdyAppConfig> jdyApps;
     private SyncTaskConfig selectedTask;
@@ -57,6 +54,7 @@ public class SyncTaskPage {
         this.configManager = configManager;
         this.taskScheduler = taskScheduler;
         this.tasks = new ArrayList<>(configManager.loadSyncTasks());
+        this.formMappings = new ArrayList<>(configManager.loadFormMappings());
         this.dataSources = new ArrayList<>(configManager.loadDataSources());
         this.jdyApps = new ArrayList<>(configManager.loadJdyApps());
         this.root = new VBox(15);
@@ -65,46 +63,41 @@ public class SyncTaskPage {
         this.taskTable = new TableView<>();
         this.nameField = new TextField();
         this.nameField.setPromptText("任务名称");
-        this.dataSourceCombo = new ComboBox<>();
-        this.dataSourceCombo.getItems().addAll(dataSources);
-        this.dataSourceCombo.setCellFactory(lv -> new ListCell<>() {
+
+        this.formMappingCombo = new ComboBox<>();
+        this.formMappingCombo.getItems().addAll(formMappings);
+        this.formMappingCombo.setPromptText("选择表单映射配置");
+        this.formMappingCombo.setCellFactory(lv -> new ListCell<>() {
             @Override
-            protected void updateItem(DataSourceConfig item, boolean empty) {
+            protected void updateItem(FormMappingConfig item, boolean empty) {
                 super.updateItem(item, empty);
-                setText((empty || item == null) ? null : item.getName());
+                if (empty || item == null) {
+                    setText(null);
+                } else {
+                    DataSourceConfig ds = dataSources.stream()
+                            .filter(d -> d.getId().equals(item.getDataSourceId()))
+                            .findFirst().orElse(null);
+                    String dsName = ds != null ? ds.getName() : "?";
+                    setText(item.getName() + "  [" + dsName + "]");
+                }
             }
         });
-        this.dataSourceCombo.setButtonCell(new ListCell<>() {
+        this.formMappingCombo.setButtonCell(new ListCell<>() {
             @Override
-            protected void updateItem(DataSourceConfig item, boolean empty) {
+            protected void updateItem(FormMappingConfig item, boolean empty) {
                 super.updateItem(item, empty);
-                setText((empty || item == null) ? null : item.getName());
+                if (empty || item == null) {
+                    setText(null);
+                } else {
+                    DataSourceConfig ds = dataSources.stream()
+                            .filter(d -> d.getId().equals(item.getDataSourceId()))
+                            .findFirst().orElse(null);
+                    String dsName = ds != null ? ds.getName() : "?";
+                    setText(item.getName() + "  [" + dsName + "]");
+                }
             }
         });
 
-        this.jdyAppCombo = new ComboBox<>();
-        this.jdyAppCombo.getItems().addAll(jdyApps);
-        this.jdyAppCombo.setCellFactory(lv -> new ListCell<>() {
-            @Override
-            protected void updateItem(JdyAppConfig item, boolean empty) {
-                super.updateItem(item, empty);
-                setText((empty || item == null) ? null : item.getName());
-            }
-        });
-        this.jdyAppCombo.setButtonCell(new ListCell<>() {
-            @Override
-            protected void updateItem(JdyAppConfig item, boolean empty) {
-                super.updateItem(item, empty);
-                setText((empty || item == null) ? null : item.getName());
-            }
-        });
-
-        this.sourceTableField = new TextField();
-        this.sourceTableField.setPromptText("MySQL 表名");
-        this.loadTablesBtn = new Button("从数据源加载");
-        this.loadTablesBtn.getStyleClass().add("btn-secondary");
-        this.entryIdField = new TextField();
-        this.entryIdField.setPromptText("简道云表单ID (Entry ID)");
         this.incrementModeCombo = new ComboBox<>();
         this.incrementModeCombo.getItems().addAll("自增ID", "时间戳字段");
         this.incrementModeCombo.setValue("自增ID");
@@ -150,19 +143,18 @@ public class SyncTaskPage {
     public void refreshData() {
         dataSources = new ArrayList<>(configManager.loadDataSources());
         jdyApps = new ArrayList<>(configManager.loadJdyApps());
+        formMappings = new ArrayList<>(configManager.loadFormMappings());
         tasks = new ArrayList<>(configManager.loadSyncTasks());
 
-        dataSourceCombo.getItems().clear();
-        dataSourceCombo.getItems().addAll(dataSources);
-
-        jdyAppCombo.getItems().clear();
-        jdyAppCombo.getItems().addAll(jdyApps);
+        formMappingCombo.getItems().clear();
+        formMappingCombo.getItems().addAll(formMappings);
 
         refreshList();
     }
 
     public void selectItem(String id) {
         tasks = new ArrayList<>(configManager.loadSyncTasks());
+        formMappings = new ArrayList<>(configManager.loadFormMappings());
         dataSources = new ArrayList<>(configManager.loadDataSources());
         jdyApps = new ArrayList<>(configManager.loadJdyApps());
         refreshList();
@@ -199,45 +191,38 @@ public class SyncTaskPage {
         grid.add(nameField, 1, 0);
         GridPane.setHgrow(nameField, Priority.ALWAYS);
 
-        grid.add(new Label("数据源"), 0, 1);
-        HBox dsBox = new HBox(10);
-        dsBox.getChildren().addAll(dataSourceCombo, loadTablesBtn);
-        grid.add(dsBox, 1, 1);
-        GridPane.setHgrow(dataSourceCombo, Priority.ALWAYS);
+        grid.add(new Label("表单映射配置"), 0, 1);
+        HBox mappingBox = new HBox(10);
+        Button goMappingBtn = new Button("去配置");
+        goMappingBtn.getStyleClass().add("btn-secondary");
+        goMappingBtn.setOnAction(e -> {
+            if (navigator != null) navigator.accept("formMapping", "");
+        });
+        mappingBox.getChildren().addAll(formMappingCombo, goMappingBtn);
+        grid.add(mappingBox, 1, 1);
+        GridPane.setHgrow(formMappingCombo, Priority.ALWAYS);
 
-        grid.add(new Label("简道云应用"), 0, 2);
-        grid.add(jdyAppCombo, 1, 2);
-        GridPane.setHgrow(jdyAppCombo, Priority.ALWAYS);
+        grid.add(new Separator(), 0, 2);
+        GridPane.setColumnSpan(grid.getChildren().get(grid.getChildren().size() - 1), 2);
 
-        grid.add(new Label("源表名"), 0, 3);
-        grid.add(sourceTableField, 1, 3);
-        GridPane.setHgrow(sourceTableField, Priority.ALWAYS);
+        grid.add(new Label("增量同步方式"), 0, 3);
+        grid.add(incrementModeCombo, 1, 3);
 
-        grid.add(new Label("表单 ID (Entry ID)"), 0, 4);
-        grid.add(entryIdField, 1, 4);
-        GridPane.setHgrow(entryIdField, Priority.ALWAYS);
+        grid.add(new Label("增量字段名"), 0, 4);
+        grid.add(incrementFieldField, 1, 4);
+        GridPane.setHgrow(incrementFieldField, Priority.ALWAYS);
 
         grid.add(new Separator(), 0, 5);
         GridPane.setColumnSpan(grid.getChildren().get(grid.getChildren().size() - 1), 2);
 
-        grid.add(new Label("增量同步方式"), 0, 6);
-        grid.add(incrementModeCombo, 1, 6);
+        grid.add(new Label("同步间隔(分钟)"), 0, 6);
+        grid.add(intervalSpinner, 1, 6);
 
-        grid.add(new Label("增量字段名"), 0, 7);
-        grid.add(incrementFieldField, 1, 7);
-        GridPane.setHgrow(incrementFieldField, Priority.ALWAYS);
+        grid.add(new Label("批量大小"), 0, 7);
+        grid.add(batchSizeSpinner, 1, 7);
 
-        grid.add(new Separator(), 0, 8);
-        GridPane.setColumnSpan(grid.getChildren().get(grid.getChildren().size() - 1), 2);
-
-        grid.add(new Label("同步间隔(分钟)"), 0, 9);
-        grid.add(intervalSpinner, 1, 9);
-
-        grid.add(new Label("批量大小"), 0, 10);
-        grid.add(batchSizeSpinner, 1, 10);
-
-        grid.add(new Label("最大重试次数"), 0, 11);
-        grid.add(retrySpinner, 1, 11);
+        grid.add(new Label("最大重试次数"), 0, 8);
+        grid.add(retrySpinner, 1, 8);
 
         ColumnConstraints col1 = new ColumnConstraints();
         col1.setMinWidth(120);
@@ -285,13 +270,8 @@ public class SyncTaskPage {
     }
 
     private void setupListeners() {
-        loadTablesBtn.setOnAction(e -> loadTablesFromDataSource());
-
-        dataSourceCombo.setOnAction(e -> {
-            DataSourceConfig ds = dataSourceCombo.getValue();
-            if (ds != null) {
-                sourceTableField.clear();
-            }
+        formMappingCombo.setOnAction(e -> {
+            updateBreadcrumb();
         });
 
         taskTable.getSelectionModel().selectedItemProperty().addListener((obs, old, newVal) -> {
@@ -305,16 +285,23 @@ public class SyncTaskPage {
     private void updateBreadcrumb() {
         breadcrumbBar.getChildren().clear();
 
-        DataSourceConfig ds = dataSourceCombo.getValue();
-        JdyAppConfig app = jdyAppCombo.getValue();
+        FormMappingConfig mapping = formMappingCombo.getValue();
 
-        if (ds == null && app == null) {
+        if (mapping == null) {
             breadcrumbBar.setVisible(false);
             watermarkBar.setVisible(false);
             return;
         }
 
         breadcrumbBar.setVisible(true);
+
+        DataSourceConfig ds = dataSources.stream()
+                .filter(d -> d.getId().equals(mapping.getDataSourceId()))
+                .findFirst().orElse(null);
+
+        JdyAppConfig app = jdyApps.stream()
+                .filter(a -> a.getId().equals(mapping.getJdyAppId()))
+                .findFirst().orElse(null);
 
         if (ds != null) {
             Hyperlink dsLink = createBreadcrumbLink("📁 " + ds.getName());
@@ -337,6 +324,16 @@ public class SyncTaskPage {
             });
             breadcrumbBar.getChildren().add(appLink);
         }
+
+        if (app != null) {
+            Label arrow = new Label("→");
+            arrow.getStyleClass().add("breadcrumb-arrow");
+            breadcrumbBar.getChildren().add(arrow);
+        }
+
+        Label mapLabel = new Label("📋 " + mapping.getName());
+        mapLabel.getStyleClass().add("breadcrumb-label");
+        breadcrumbBar.getChildren().add(mapLabel);
 
         updateWatermarkBar();
     }
@@ -388,95 +385,37 @@ public class SyncTaskPage {
         return link;
     }
 
-    private void loadTablesFromDataSource() {
-        DataSourceConfig ds = dataSourceCombo.getValue();
-        if (ds == null) {
-            showStatus(false, "请先选择数据源");
-            return;
-        }
-
-        statusLabel.setText("正在加载表列表...");
-        executor.submit(() -> {
-            List<String> tables = ConnectionTestService.fetchTableList(ds);
-            javafx.application.Platform.runLater(() -> {
-                if (tables.isEmpty()) {
-                    showStatus(false, "无法连接数据源或无表");
-                } else {
-                    ChoiceDialog<String> dialog = new ChoiceDialog<>(tables.get(0), tables);
-                    dialog.setTitle("选择表");
-                    dialog.setHeaderText("选择要同步的表");
-                    dialog.setContentText("表名:");
-                    dialog.showAndWait().ifPresent(tableName -> {
-                        sourceTableField.setText(tableName);
-                        showStatus(true, "已选择表: " + tableName);
-                    });
-                }
-            });
-        });
-    }
-
     private void setupTable() {
         TableColumn<SyncTaskConfig, String> nameCol = new TableColumn<>("任务名称");
         nameCol.setCellValueFactory(cell -> new javafx.beans.property.SimpleStringProperty(cell.getValue().getName()));
-        nameCol.setPrefWidth(100);
+        nameCol.setPrefWidth(120);
 
-        TableColumn<SyncTaskConfig, String> dsCol = new TableColumn<>("数据源");
-        dsCol.setCellValueFactory(cell -> {
-            String dsName = "";
-            DataSourceConfig ds = dataSources.stream()
-                    .filter(d -> d.getId().equals(cell.getValue().getDataSourceId()))
-                    .findFirst().orElse(null);
-            if (ds != null) dsName = ds.getName();
-            return new javafx.beans.property.SimpleStringProperty(dsName);
+        TableColumn<SyncTaskConfig, String> mappingCol = new TableColumn<>("表单映射");
+        mappingCol.setCellValueFactory(cell -> {
+            FormMappingConfig fm = configManager.findFormMappingById(cell.getValue().getFormMappingId());
+            String fmName = fm != null ? fm.getName() : (cell.getValue().getSourceTable() != null ? cell.getValue().getSourceTable() : "?");
+            return new javafx.beans.property.SimpleStringProperty(fmName);
         });
-        dsCol.setPrefWidth(100);
-
-        TableColumn<SyncTaskConfig, String> appCol = new TableColumn<>("简道云应用");
-        appCol.setCellValueFactory(cell -> {
-            String appName = "";
-            JdyAppConfig app = jdyApps.stream()
-                    .filter(a -> a.getId().equals(cell.getValue().getJdyAppId()))
-                    .findFirst().orElse(null);
-            if (app != null) appName = app.getName();
-            return new javafx.beans.property.SimpleStringProperty(appName);
-        });
-        appCol.setPrefWidth(100);
-
-        TableColumn<SyncTaskConfig, String> tableCol = new TableColumn<>("源表");
-        tableCol.setCellValueFactory(cell -> new javafx.beans.property.SimpleStringProperty(cell.getValue().getSourceTable()));
-        tableCol.setPrefWidth(90);
-
-        TableColumn<SyncTaskConfig, String> entryCol = new TableColumn<>("表单ID");
-        entryCol.setCellValueFactory(cell -> new javafx.beans.property.SimpleStringProperty(cell.getValue().getEntryId()));
-        entryCol.setPrefWidth(70);
+        mappingCol.setPrefWidth(120);
 
         TableColumn<SyncTaskConfig, String> intervalCol = new TableColumn<>("间隔(分)");
         intervalCol.setCellValueFactory(cell -> new javafx.beans.property.SimpleStringProperty(String.valueOf(cell.getValue().getSyncIntervalMinutes())));
-        intervalCol.setPrefWidth(60);
+        intervalCol.setPrefWidth(70);
 
         TableColumn<SyncTaskConfig, String> statusCol = new TableColumn<>("状态");
         statusCol.setCellValueFactory(cell -> new javafx.beans.property.SimpleStringProperty(cell.getValue().isEnabled() ? "启用" : "禁用"));
-        statusCol.setPrefWidth(50);
+        statusCol.setPrefWidth(60);
 
-        taskTable.getColumns().addAll(nameCol, dsCol, appCol, tableCol, entryCol, intervalCol, statusCol);
+        taskTable.getColumns().addAll(nameCol, mappingCol, intervalCol, statusCol);
     }
 
     private void loadTaskToForm(SyncTaskConfig task) {
         selectedTask = task;
         nameField.setText(task.getName());
 
-        DataSourceConfig ds = dataSources.stream()
-                .filter(d -> d.getId().equals(task.getDataSourceId()))
-                .findFirst().orElse(null);
-        dataSourceCombo.setValue(ds);
+        FormMappingConfig fm = configManager.findFormMappingById(task.getFormMappingId());
+        formMappingCombo.setValue(fm);
 
-        JdyAppConfig app = jdyApps.stream()
-                .filter(a -> a.getId().equals(task.getJdyAppId()))
-                .findFirst().orElse(null);
-        jdyAppCombo.setValue(app);
-
-        sourceTableField.setText(task.getSourceTable());
-        entryIdField.setText(task.getEntryId());
         incrementModeCombo.setValue("id".equals(task.getIncrementMode()) ? "自增ID" : "时间戳字段");
         incrementFieldField.setText(task.getIncrementField());
         intervalSpinner.getValueFactory().setValue(task.getSyncIntervalMinutes());
@@ -490,10 +429,7 @@ public class SyncTaskPage {
     private void clearForm() {
         selectedTask = null;
         nameField.clear();
-        dataSourceCombo.getSelectionModel().clearSelection();
-        jdyAppCombo.getSelectionModel().clearSelection();
-        sourceTableField.clear();
-        entryIdField.clear();
+        formMappingCombo.getSelectionModel().clearSelection();
         incrementModeCombo.setValue("自增ID");
         incrementFieldField.clear();
         intervalSpinner.getValueFactory().setValue(5);
@@ -511,29 +447,14 @@ public class SyncTaskPage {
 
     private void saveTask() {
         String name = nameField.getText().trim();
-        String entryId = entryIdField.getText().trim();
-        String sourceTable = sourceTableField.getText().trim();
-        DataSourceConfig ds = dataSourceCombo.getValue();
-        JdyAppConfig app = jdyAppCombo.getValue();
+        FormMappingConfig fm = formMappingCombo.getValue();
 
         if (name.isEmpty()) {
             showStatus(false, "请输入任务名称");
             return;
         }
-        if (ds == null) {
-            showStatus(false, "请选择数据源");
-            return;
-        }
-        if (app == null) {
-            showStatus(false, "请选择简道云应用");
-            return;
-        }
-        if (sourceTable.isEmpty()) {
-            showStatus(false, "请输入源表名");
-            return;
-        }
-        if (entryId.isEmpty()) {
-            showStatus(false, "请输入简道云表单ID");
+        if (fm == null) {
+            showStatus(false, "请选择表单映射配置");
             return;
         }
 
@@ -541,10 +462,7 @@ public class SyncTaskPage {
             SyncTaskConfig task = new SyncTaskConfig();
             task.setId(UUID.randomUUID().toString());
             task.setName(name);
-            task.setDataSourceId(ds.getId());
-            task.setJdyAppId(app.getId());
-            task.setSourceTable(sourceTable);
-            task.setEntryId(entryId);
+            task.setFormMappingId(fm.getId());
             task.setIncrementMode("自增ID".equals(incrementModeCombo.getValue()) ? "id" : "timestamp");
             task.setIncrementField(incrementFieldField.getText().trim());
             task.setSyncIntervalMinutes(intervalSpinner.getValue());
@@ -555,10 +473,7 @@ public class SyncTaskPage {
             selectedTask = task;
         } else {
             selectedTask.setName(name);
-            selectedTask.setDataSourceId(ds.getId());
-            selectedTask.setJdyAppId(app.getId());
-            selectedTask.setSourceTable(sourceTable);
-            selectedTask.setEntryId(entryId);
+            selectedTask.setFormMappingId(fm.getId());
             selectedTask.setIncrementMode("自增ID".equals(incrementModeCombo.getValue()) ? "id" : "timestamp");
             selectedTask.setIncrementField(incrementFieldField.getText().trim());
             selectedTask.setSyncIntervalMinutes(intervalSpinner.getValue());

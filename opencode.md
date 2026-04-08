@@ -109,7 +109,6 @@ src/main/java/org/example/gui/
 
 ## 已知问题和待办
 
-- 旧版 `jdy_config.json` 不会自动迁移到 `jdy_apps.json`，用户需重新配置
 - 已有同步任务的 `jdyAppId` 为 null，需在 UI 中重新选择应用保存
 - 仅支持 MySQL，如需 SQL Server 需重新添加 mssql-jdbc 和 JDBC URL 构建逻辑
 - 字段映射缓存基于 `dataSourceId::tableName`，切换任务但同源同表会复用缓存

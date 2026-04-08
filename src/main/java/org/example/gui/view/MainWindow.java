@@ -23,7 +23,7 @@ public class MainWindow {
     private DataSourcePage dataSourcePage;
     private JdyConfigPage jdyConfigPage;
     private SyncTaskPage syncTaskPage;
-    private FieldMappingPage fieldMappingPage;
+    private FormMappingPage formMappingPage;
     private LogPage logPage;
 
     private String currentPageId = "dataSource";
@@ -45,8 +45,8 @@ public class MainWindow {
         jdyConfigPage = new JdyConfigPage(configManager);
         syncTaskPage = new SyncTaskPage(configManager, taskScheduler);
         syncTaskPage.setNavigator(navigator);
-        fieldMappingPage = new FieldMappingPage(configManager);
-        fieldMappingPage.setNavigator(navigator);
+        formMappingPage = new FormMappingPage(configManager);
+        formMappingPage.setNavigator(navigator);
 
         showPage("dataSource");
         taskScheduler.startAll();
@@ -67,11 +67,11 @@ public class MainWindow {
 
         ToggleButton btnDataSource = createNavButton("数据源配置", "dataSource");
         ToggleButton btnJdyConfig = createNavButton("简道云配置", "jdyConfig");
+        ToggleButton btnFormMapping = createNavButton("表单映射", "formMapping");
         ToggleButton btnSyncTask = createNavButton("同步任务", "syncTask");
-        ToggleButton btnFieldMapping = createNavButton("字段映射", "fieldMapping");
         ToggleButton btnLog = createNavButton("运行日志", "log");
 
-        sidebar.getChildren().addAll(title, separator, btnDataSource, btnJdyConfig, btnSyncTask, btnFieldMapping, btnLog);
+        sidebar.getChildren().addAll(title, separator, btnDataSource, btnJdyConfig, btnFormMapping, btnSyncTask, btnLog);
 
         Region spacer = new Region();
         VBox.setVgrow(spacer, Priority.ALWAYS);
@@ -116,9 +116,9 @@ public class MainWindow {
             case "jdyConfig":
                 contentArea.getChildren().setAll(jdyConfigPage.getContent());
                 break;
-            case "fieldMapping":
-                fieldMappingPage.refreshData();
-                contentArea.getChildren().setAll(fieldMappingPage.getContent());
+            case "formMapping":
+                formMappingPage.refreshData();
+                contentArea.getChildren().setAll(formMappingPage.getContent());
                 break;
             case "syncTask":
                 syncTaskPage.refreshData();
@@ -153,8 +153,8 @@ public class MainWindow {
         switch (pageId) {
             case "dataSource": return "数据源配置";
             case "jdyConfig": return "简道云配置";
+            case "formMapping": return "表单映射";
             case "syncTask": return "同步任务";
-            case "fieldMapping": return "字段映射";
             case "log": return "运行日志";
             default: return "";
         }
