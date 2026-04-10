@@ -1,21 +1,25 @@
 package org.example.gui.controller;
 
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Cursor;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
+import javafx.stage.Popup;
 import org.example.gui.model.DataSourceConfig;
 import org.example.gui.model.FormMappingConfig;
 import org.example.gui.model.JdyAppConfig;
-import org.example.gui.model.SyncProgress;
 import org.example.gui.model.SyncTaskConfig;
 import org.example.gui.service.ConfigManager;
 import org.example.gui.service.SyncEngine;
 import org.example.gui.service.TaskScheduler;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -28,25 +32,25 @@ public class SyncTaskPage {
     private final VBox root;
     private final TableView<SyncTaskConfig> taskTable;
     private final TextField nameField;
-    private final ComboBox<FormMappingConfig> formMappingCombo;
-    private final ComboBox<String> incrementModeCombo;
-    private final TextField incrementFieldField;
+    private final VBox selectedMappingsBox;
     private final Spinner<Integer> intervalSpinner;
     private final Spinner<Integer> batchSizeSpinner;
     private final Spinner<Integer> retrySpinner;
     private final CheckBox enabledCheck;
     private final Label statusLabel;
     private final HBox breadcrumbBar;
-    private final HBox watermarkBar;
-    private final TextField watermarkField;
-    private final Button saveWatermarkBtn;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
+    private VBox formPanel;
     private List<SyncTaskConfig> tasks;
     private List<FormMappingConfig> formMappings;
     private List<DataSourceConfig> dataSources;
     private List<JdyAppConfig> jdyApps;
     private SyncTaskConfig selectedTask;
+    
+    private final ObservableList<FormMappingConfig> selectedMappings = FXCollections.observableArrayList();
+    private Popup mappingPopup;
+    private Button dropDownBtn;
 
     private BiConsumer<String, String> navigator;
 
@@ -63,46 +67,8 @@ public class SyncTaskPage {
         this.taskTable = new TableView<>();
         this.nameField = new TextField();
         this.nameField.setPromptText("任务名称");
+        this.selectedMappingsBox = new VBox(5);
 
-        this.formMappingCombo = new ComboBox<>();
-        this.formMappingCombo.getItems().addAll(formMappings);
-        this.formMappingCombo.setPromptText("选择表单映射配置");
-        this.formMappingCombo.setCellFactory(lv -> new ListCell<>() {
-            @Override
-            protected void updateItem(FormMappingConfig item, boolean empty) {
-                super.updateItem(item, empty);
-                if (empty || item == null) {
-                    setText(null);
-                } else {
-                    DataSourceConfig ds = dataSources.stream()
-                            .filter(d -> d.getId().equals(item.getDataSourceId()))
-                            .findFirst().orElse(null);
-                    String dsName = ds != null ? ds.getName() : "?";
-                    setText(item.getName() + "  [" + dsName + "]");
-                }
-            }
-        });
-        this.formMappingCombo.setButtonCell(new ListCell<>() {
-            @Override
-            protected void updateItem(FormMappingConfig item, boolean empty) {
-                super.updateItem(item, empty);
-                if (empty || item == null) {
-                    setText(null);
-                } else {
-                    DataSourceConfig ds = dataSources.stream()
-                            .filter(d -> d.getId().equals(item.getDataSourceId()))
-                            .findFirst().orElse(null);
-                    String dsName = ds != null ? ds.getName() : "?";
-                    setText(item.getName() + "  [" + dsName + "]");
-                }
-            }
-        });
-
-        this.incrementModeCombo = new ComboBox<>();
-        this.incrementModeCombo.getItems().addAll("自增ID", "时间戳字段");
-        this.incrementModeCombo.setValue("自增ID");
-        this.incrementFieldField = new TextField();
-        this.incrementFieldField.setPromptText("增量字段名，如 id 或 update_time");
         this.intervalSpinner = new Spinner<>(1, 1440, 5);
         this.intervalSpinner.setEditable(true);
         this.batchSizeSpinner = new Spinner<>(1, 500, 50);
@@ -118,19 +84,6 @@ public class SyncTaskPage {
         this.breadcrumbBar.getStyleClass().add("breadcrumb-bar");
         this.breadcrumbBar.setVisible(false);
 
-        this.watermarkBar = new HBox(10);
-        this.watermarkBar.setAlignment(Pos.CENTER_LEFT);
-        this.watermarkBar.getStyleClass().add("watermark-bar");
-        this.watermarkBar.setVisible(false);
-
-        this.watermarkField = new TextField();
-        this.watermarkField.setPromptText("上次同步的水印值（最大ID或时间戳）");
-        this.watermarkField.setPrefWidth(200);
-
-        this.saveWatermarkBtn = new Button("更新水印");
-        this.saveWatermarkBtn.getStyleClass().add("btn-secondary");
-        this.saveWatermarkBtn.setOnAction(e -> saveWatermark());
-
         setupLayout();
         setupTable();
         refreshList();
@@ -145,10 +98,6 @@ public class SyncTaskPage {
         jdyApps = new ArrayList<>(configManager.loadJdyApps());
         formMappings = new ArrayList<>(configManager.loadFormMappings());
         tasks = new ArrayList<>(configManager.loadSyncTasks());
-
-        formMappingCombo.getItems().clear();
-        formMappingCombo.getItems().addAll(formMappings);
-
         refreshList();
     }
 
@@ -168,6 +117,10 @@ public class SyncTaskPage {
         Label titleLabel = new Label("同步任务管理");
         titleLabel.getStyleClass().add("page-title");
 
+        Label descLabel = new Label("同步任务只负责调度，增量配置和水印在表单映射中管理。一个任务可包含多个表单映射，按顺序执行。");
+        descLabel.getStyleClass().add("description-label");
+        descLabel.setWrapText(true);
+
         HBox mainContent = new HBox(20);
         HBox.setHgrow(mainContent, Priority.ALWAYS);
 
@@ -175,11 +128,18 @@ public class SyncTaskPage {
         listPanel.setPrefWidth(400);
         Label listTitle = new Label("同步任务列表");
         listTitle.getStyleClass().add("section-title");
+        
+        Button newTaskBtn = new Button("新建同步任务");
+        newTaskBtn.getStyleClass().add("btn-primary");
+        newTaskBtn.setOnAction(e -> startNewTask());
+        
         VBox.setVgrow(taskTable, Priority.ALWAYS);
-        listPanel.getChildren().addAll(listTitle, taskTable);
+        listPanel.getChildren().addAll(listTitle, newTaskBtn, taskTable);
 
-        VBox formPanel = new VBox(15);
-        HBox.setHgrow(formPanel, Priority.ALWAYS);
+        this.formPanel = new VBox(15);
+        this.formPanel.setVisible(false);
+        this.formPanel.setManaged(false);
+        HBox.setHgrow(this.formPanel, Priority.ALWAYS);
         Label formTitle = new Label("任务配置");
         formTitle.getStyleClass().add("section-title");
 
@@ -192,37 +152,49 @@ public class SyncTaskPage {
         GridPane.setHgrow(nameField, Priority.ALWAYS);
 
         grid.add(new Label("表单映射配置"), 0, 1);
-        HBox mappingBox = new HBox(10);
+        VBox mappingBox = new VBox(8);
+        
+        HBox dropDownRow = new HBox(10);
+        dropDownRow.setAlignment(Pos.CENTER_LEFT);
+        dropDownBtn = new Button("选择表单映射 ▼");
+        dropDownBtn.getStyleClass().add("btn-secondary");
+        dropDownBtn.setOnAction(e -> showMappingPopup());
+        
         Button goMappingBtn = new Button("去配置");
         goMappingBtn.getStyleClass().add("btn-secondary");
         goMappingBtn.setOnAction(e -> {
             if (navigator != null) navigator.accept("formMapping", "");
         });
-        mappingBox.getChildren().addAll(formMappingCombo, goMappingBtn);
+        
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        dropDownRow.getChildren().addAll(dropDownBtn, spacer, goMappingBtn);
+        
+        Label selectedLabel = new Label("已选择的配置：");
+        selectedLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 12px;");
+        
+        selectedMappingsBox.setPadding(new Insets(8));
+        selectedMappingsBox.setStyle("-fx-background-color: #f5f5f5; -fx-background-radius: 4; -fx-border-color: #ddd; -fx-border-radius: 4;");
+        
+        Label emptyHint = new Label("暂无选择");
+        emptyHint.setStyle("-fx-text-fill: #999; -fx-font-style: italic;");
+        selectedMappingsBox.getChildren().add(emptyHint);
+        
+        mappingBox.getChildren().addAll(dropDownRow, selectedLabel, selectedMappingsBox);
         grid.add(mappingBox, 1, 1);
-        GridPane.setHgrow(formMappingCombo, Priority.ALWAYS);
+        GridPane.setHgrow(mappingBox, Priority.ALWAYS);
 
         grid.add(new Separator(), 0, 2);
         GridPane.setColumnSpan(grid.getChildren().get(grid.getChildren().size() - 1), 2);
 
-        grid.add(new Label("增量同步方式"), 0, 3);
-        grid.add(incrementModeCombo, 1, 3);
+        grid.add(new Label("同步间隔(分钟)"), 0, 3);
+        grid.add(intervalSpinner, 1, 3);
 
-        grid.add(new Label("增量字段名"), 0, 4);
-        grid.add(incrementFieldField, 1, 4);
-        GridPane.setHgrow(incrementFieldField, Priority.ALWAYS);
+        grid.add(new Label("批量大小"), 0, 4);
+        grid.add(batchSizeSpinner, 1, 4);
 
-        grid.add(new Separator(), 0, 5);
-        GridPane.setColumnSpan(grid.getChildren().get(grid.getChildren().size() - 1), 2);
-
-        grid.add(new Label("同步间隔(分钟)"), 0, 6);
-        grid.add(intervalSpinner, 1, 6);
-
-        grid.add(new Label("批量大小"), 0, 7);
-        grid.add(batchSizeSpinner, 1, 7);
-
-        grid.add(new Label("最大重试次数"), 0, 8);
-        grid.add(retrySpinner, 1, 8);
+        grid.add(new Label("最大重试次数"), 0, 5);
+        grid.add(retrySpinner, 1, 5);
 
         ColumnConstraints col1 = new ColumnConstraints();
         col1.setMinWidth(120);
@@ -259,21 +231,144 @@ public class SyncTaskPage {
 
         buttonBar.getChildren().addAll(newBtn, saveBtn, deleteBtn, runBtn, refreshBtn);
 
-        formPanel.getChildren().addAll(formTitle, breadcrumbBar, watermarkBar, enabledCheck, grid, buttonBar, statusLabel);
+        formPanel.getChildren().addAll(formTitle, breadcrumbBar, enabledCheck, grid, buttonBar, statusLabel);
 
         mainContent.getChildren().addAll(listPanel, formPanel);
         HBox.setHgrow(formPanel, Priority.ALWAYS);
 
-        root.getChildren().addAll(titleLabel, mainContent);
+        root.getChildren().addAll(titleLabel, descLabel, mainContent);
 
         setupListeners();
     }
 
-    private void setupListeners() {
-        formMappingCombo.setOnAction(e -> {
-            updateBreadcrumb();
-        });
+    private void showMappingPopup() {
+        if (mappingPopup != null && mappingPopup.isShowing()) {
+            mappingPopup.hide();
+            return;
+        }
+        
+        VBox content = new VBox(5);
+        content.setPadding(new Insets(10));
+        content.setStyle("-fx-background-color: white; -fx-border-color: #ccc; -fx-border-width: 1; -fx-background-radius: 4;");
+        content.setPrefWidth(400);
+        
+        ScrollPane scrollPane = new ScrollPane();
+        scrollPane.setPrefHeight(200);
+        scrollPane.setFitToWidth(true);
+        scrollPane.setStyle("-fx-background-color: transparent;");
+        
+        VBox checkBoxContainer = new VBox(3);
+        
+        Set<String> selectedIds = new HashSet<>();
+        for (FormMappingConfig fm : selectedMappings) {
+            selectedIds.add(fm.getId());
+        }
+        
+        for (FormMappingConfig fm : formMappings) {
+            CheckBox cb = new CheckBox();
+            cb.setSelected(selectedIds.contains(fm.getId()));
+            
+            DataSourceConfig ds = dataSources.stream()
+                    .filter(d -> d.getId().equals(fm.getDataSourceId()))
+                    .findFirst().orElse(null);
+            String dsName = ds != null ? ds.getName() : "?";
+            String mode = "id".equals(fm.getIncrementMode()) ? "ID" : "时间戳";
+            cb.setText(fm.getName() + "  [" + dsName + "] (" + mode + ")");
+            cb.setUserData(fm);
+            cb.setMaxWidth(Double.MAX_VALUE);
+            
+            cb.selectedProperty().addListener((obs, oldVal, newVal) -> {
+                FormMappingConfig mapping = (FormMappingConfig) cb.getUserData();
+                if (newVal) {
+                    if (!selectedMappings.contains(mapping)) {
+                        selectedMappings.add(mapping);
+                    }
+                } else {
+                    selectedMappings.remove(mapping);
+                }
+                updateSelectedMappingsDisplay();
+                updateBreadcrumb();
+            });
+            
+            checkBoxContainer.getChildren().add(cb);
+        }
+        
+        scrollPane.setContent(checkBoxContainer);
+        
+        if (formMappings.isEmpty()) {
+            Label noData = new Label("暂无表单映射配置，请先去配置");
+            noData.setStyle("-fx-text-fill: #999;");
+            content.getChildren().add(noData);
+        } else {
+            content.getChildren().add(scrollPane);
+        }
+        
+        mappingPopup = new Popup();
+        mappingPopup.getContent().clear();
+        mappingPopup.getContent().add(content);
+        mappingPopup.setAutoHide(true);
+        mappingPopup.setHideOnEscape(true);
+        
+        content.setStyle("-fx-background-color: white; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.2), 10, 0, 0, 2); -fx-background-radius: 4;");
+        
+        javafx.stage.Window window = dropDownBtn.getScene().getWindow();
+        double x = window.getX() + dropDownBtn.localToScene(0, 0).getX() + dropDownBtn.getScene().getX();
+        double y = window.getY() + dropDownBtn.localToScene(0, 0).getY() + dropDownBtn.getScene().getY() + dropDownBtn.getHeight();
+        mappingPopup.show(dropDownBtn, x, y);
+    }
 
+    private void updateSelectedMappingsDisplay() {
+        selectedMappingsBox.getChildren().clear();
+        
+        if (selectedMappings.isEmpty()) {
+            Label emptyHint = new Label("暂无选择");
+            emptyHint.setStyle("-fx-text-fill: #999; -fx-font-style: italic;");
+            selectedMappingsBox.getChildren().add(emptyHint);
+            return;
+        }
+        
+        int index = 1;
+        for (FormMappingConfig fm : selectedMappings) {
+            HBox row = new HBox(10);
+            row.setAlignment(Pos.CENTER_LEFT);
+            row.setPadding(new Insets(4, 0, 4, 0));
+            row.setStyle("-fx-border-color: transparent transparent #eee transparent; -fx-border-width: 0 0 1 0;");
+            
+            Label indexLabel = new Label(index + ".");
+            indexLabel.setStyle("-fx-font-weight: bold; -fx-min-width: 20px;");
+            
+            DataSourceConfig ds = dataSources.stream()
+                    .filter(d -> d.getId().equals(fm.getDataSourceId()))
+                    .findFirst().orElse(null);
+            String dsName = ds != null ? ds.getName() : "?";
+            String mode = "id".equals(fm.getIncrementMode()) ? "ID" : "时间戳";
+            
+            Label nameLabel = new Label(fm.getName());
+            nameLabel.setStyle("-fx-font-weight: bold;");
+            
+            Label infoLabel = new Label("[" + dsName + "] (" + mode + ")");
+            infoLabel.setStyle("-fx-text-fill: #666; -fx-font-size: 11px;");
+            
+            Region spacer = new Region();
+            HBox.setHgrow(spacer, Priority.ALWAYS);
+            
+            Button removeBtn = new Button("×");
+            removeBtn.setStyle("-fx-background-color: transparent; -fx-text-fill: #c00; -fx-font-size: 14px; -fx-padding: 0 5 0 5; -fx-cursor: hand;");
+            removeBtn.setOnAction(e -> {
+                selectedMappings.remove(fm);
+                updateSelectedMappingsDisplay();
+                updateBreadcrumb();
+            });
+            
+            row.getChildren().addAll(indexLabel, nameLabel, infoLabel, spacer, removeBtn);
+            selectedMappingsBox.getChildren().add(row);
+            index++;
+        }
+        
+        dropDownBtn.setText("选择表单映射 ▼ (" + selectedMappings.size() + ")");
+    }
+
+    private void setupListeners() {
         taskTable.getSelectionModel().selectedItemProperty().addListener((obs, old, newVal) -> {
             if (newVal != null) {
                 selectedTask = newVal;
@@ -285,22 +380,20 @@ public class SyncTaskPage {
     private void updateBreadcrumb() {
         breadcrumbBar.getChildren().clear();
 
-        FormMappingConfig mapping = formMappingCombo.getValue();
-
-        if (mapping == null) {
+        if (selectedMappings.isEmpty()) {
             breadcrumbBar.setVisible(false);
-            watermarkBar.setVisible(false);
             return;
         }
 
         breadcrumbBar.setVisible(true);
 
+        FormMappingConfig firstMapping = selectedMappings.get(0);
         DataSourceConfig ds = dataSources.stream()
-                .filter(d -> d.getId().equals(mapping.getDataSourceId()))
+                .filter(d -> d.getId().equals(firstMapping.getDataSourceId()))
                 .findFirst().orElse(null);
 
         JdyAppConfig app = jdyApps.stream()
-                .filter(a -> a.getId().equals(mapping.getJdyAppId()))
+                .filter(a -> a.getId().equals(firstMapping.getJdyAppId()))
                 .findFirst().orElse(null);
 
         if (ds != null) {
@@ -331,49 +424,9 @@ public class SyncTaskPage {
             breadcrumbBar.getChildren().add(arrow);
         }
 
-        Label mapLabel = new Label("📋 " + mapping.getName());
+        Label mapLabel = new Label("📋 " + firstMapping.getName() + (selectedMappings.size() > 1 ? " (+" + (selectedMappings.size() - 1) + ")" : ""));
         mapLabel.getStyleClass().add("breadcrumb-label");
         breadcrumbBar.getChildren().add(mapLabel);
-
-        updateWatermarkBar();
-    }
-
-    private void updateWatermarkBar() {
-        watermarkBar.getChildren().clear();
-
-        if (selectedTask == null) {
-            watermarkBar.setVisible(false);
-            return;
-        }
-
-        watermarkBar.setVisible(true);
-
-        SyncProgress progress = configManager.loadSyncProgress();
-        String lastSyncId = progress.getLastSyncId(selectedTask.getId());
-
-        Label watermarkLabel = new Label("💧 水印:");
-        watermarkLabel.getStyleClass().add("watermark-label");
-
-        watermarkField.setText(lastSyncId);
-
-        watermarkBar.getChildren().addAll(watermarkLabel, watermarkField, saveWatermarkBtn);
-    }
-
-    private void saveWatermark() {
-        if (selectedTask == null) {
-            showStatus(false, "请先选择同步任务");
-            return;
-        }
-
-        String watermark = watermarkField.getText().trim();
-        if (watermark.isEmpty()) {
-            watermark = "0";
-        }
-
-        SyncProgress progress = configManager.loadSyncProgress();
-        progress.setLastSyncId(selectedTask.getId(), watermark);
-        configManager.saveSyncProgress(progress);
-        showStatus(true, "水印已更新为: " + watermark);
     }
 
     private Hyperlink createBreadcrumbLink(String text) {
@@ -392,11 +445,19 @@ public class SyncTaskPage {
 
         TableColumn<SyncTaskConfig, String> mappingCol = new TableColumn<>("表单映射");
         mappingCol.setCellValueFactory(cell -> {
-            FormMappingConfig fm = configManager.findFormMappingById(cell.getValue().getFormMappingId());
-            String fmName = fm != null ? fm.getName() : (cell.getValue().getSourceTable() != null ? cell.getValue().getSourceTable() : "?");
-            return new javafx.beans.property.SimpleStringProperty(fmName);
+            List<String> ids = cell.getValue().getFormMappingIds();
+            if (ids != null && !ids.isEmpty()) {
+                FormMappingConfig fm = configManager.findFormMappingById(ids.get(0));
+                String fmName = fm != null ? fm.getName() : "?";
+                if (ids.size() > 1) {
+                    fmName += " (+" + (ids.size() - 1) + ")";
+                }
+                return new javafx.beans.property.SimpleStringProperty(fmName);
+            } else {
+                return new javafx.beans.property.SimpleStringProperty("?");
+            }
         });
-        mappingCol.setPrefWidth(120);
+        mappingCol.setPrefWidth(150);
 
         TableColumn<SyncTaskConfig, String> intervalCol = new TableColumn<>("间隔(分)");
         intervalCol.setCellValueFactory(cell -> new javafx.beans.property.SimpleStringProperty(String.valueOf(cell.getValue().getSyncIntervalMinutes())));
@@ -413,31 +474,40 @@ public class SyncTaskPage {
         selectedTask = task;
         nameField.setText(task.getName());
 
-        FormMappingConfig fm = configManager.findFormMappingById(task.getFormMappingId());
-        formMappingCombo.setValue(fm);
+        selectedMappings.clear();
+        List<String> ids = task.getFormMappingIds();
+        if (ids != null && !ids.isEmpty()) {
+            for (String id : ids) {
+                FormMappingConfig fm = configManager.findFormMappingById(id);
+                if (fm != null) {
+                    selectedMappings.add(fm);
+                }
+            }
+        }
+        updateSelectedMappingsDisplay();
 
-        incrementModeCombo.setValue("id".equals(task.getIncrementMode()) ? "自增ID" : "时间戳字段");
-        incrementFieldField.setText(task.getIncrementField());
         intervalSpinner.getValueFactory().setValue(task.getSyncIntervalMinutes());
         batchSizeSpinner.getValueFactory().setValue(task.getMaxBatchSize());
         retrySpinner.getValueFactory().setValue(task.getMaxRetry());
         enabledCheck.setSelected(task.isEnabled());
+
         statusLabel.setText("");
         updateBreadcrumb();
+        showFormPanel(true);
     }
 
     private void clearForm() {
         selectedTask = null;
         nameField.clear();
-        formMappingCombo.getSelectionModel().clearSelection();
-        incrementModeCombo.setValue("自增ID");
-        incrementFieldField.clear();
+        selectedMappings.clear();
+        updateSelectedMappingsDisplay();
         intervalSpinner.getValueFactory().setValue(5);
         batchSizeSpinner.getValueFactory().setValue(50);
         retrySpinner.getValueFactory().setValue(3);
         enabledCheck.setSelected(true);
         statusLabel.setText("");
         updateBreadcrumb();
+        showFormPanel(false);
     }
 
     private void refreshList() {
@@ -447,24 +517,26 @@ public class SyncTaskPage {
 
     private void saveTask() {
         String name = nameField.getText().trim();
-        FormMappingConfig fm = formMappingCombo.getValue();
 
         if (name.isEmpty()) {
             showStatus(false, "请输入任务名称");
             return;
         }
-        if (fm == null) {
-            showStatus(false, "请选择表单映射配置");
+        if (selectedMappings.isEmpty()) {
+            showStatus(false, "请选择至少一个表单映射配置");
             return;
+        }
+
+        List<String> mappingIds = new ArrayList<>();
+        for (FormMappingConfig fm : selectedMappings) {
+            mappingIds.add(fm.getId());
         }
 
         if (selectedTask == null) {
             SyncTaskConfig task = new SyncTaskConfig();
             task.setId(UUID.randomUUID().toString());
             task.setName(name);
-            task.setFormMappingId(fm.getId());
-            task.setIncrementMode("自增ID".equals(incrementModeCombo.getValue()) ? "id" : "timestamp");
-            task.setIncrementField(incrementFieldField.getText().trim());
+            task.setFormMappingIds(mappingIds);
             task.setSyncIntervalMinutes(intervalSpinner.getValue());
             task.setMaxBatchSize(batchSizeSpinner.getValue());
             task.setMaxRetry(retrySpinner.getValue());
@@ -473,9 +545,7 @@ public class SyncTaskPage {
             selectedTask = task;
         } else {
             selectedTask.setName(name);
-            selectedTask.setFormMappingId(fm.getId());
-            selectedTask.setIncrementMode("自增ID".equals(incrementModeCombo.getValue()) ? "id" : "timestamp");
-            selectedTask.setIncrementField(incrementFieldField.getText().trim());
+            selectedTask.setFormMappingIds(mappingIds);
             selectedTask.setSyncIntervalMinutes(intervalSpinner.getValue());
             selectedTask.setMaxBatchSize(batchSizeSpinner.getValue());
             selectedTask.setMaxRetry(retrySpinner.getValue());
@@ -483,11 +553,12 @@ public class SyncTaskPage {
         }
 
         configManager.saveSyncTasks(tasks);
+        
         taskScheduler.refresh();
         refreshList();
         taskTable.getSelectionModel().select(selectedTask);
         updateBreadcrumb();
-        showStatus(true, "任务已保存");
+        showStatus(true, "任务已保存，包含 " + mappingIds.size() + " 个表单映射");
     }
 
     private void deleteTask() {
@@ -533,6 +604,18 @@ public class SyncTaskPage {
         statusLabel.setText(message);
         statusLabel.getStyleClass().removeAll("status-success", "status-error");
         statusLabel.getStyleClass().add(success ? "status-success" : "status-error");
+    }
+
+    private void startNewTask() {
+        clearForm();
+        showFormPanel(true);
+    }
+
+    private void showFormPanel(boolean show) {
+        if (formPanel != null) {
+            formPanel.setVisible(show);
+            formPanel.setManaged(show);
+        }
     }
 
     public VBox getContent() {

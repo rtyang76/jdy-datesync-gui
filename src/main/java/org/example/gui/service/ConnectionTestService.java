@@ -12,17 +12,13 @@ import java.util.List;
 public class ConnectionTestService {
 
     public static TestResult testConnection(DataSourceConfig config) {
-        String url = config.getJdbcUrl();
-        String username = config.getUsername();
-        String password = config.getPassword();
-
         try {
             Class.forName("com.mysql.cj.jdbc.Driver");
         } catch (ClassNotFoundException e) {
             return new TestResult(false, "找不到 MySQL 驱动");
         }
 
-        try (Connection conn = DriverManager.getConnection(url, username, password)) {
+        try (Connection conn = JdbcUtils.getConnection(config)) {
             String dbProductName = conn.getMetaData().getDatabaseProductName();
             String dbVersion = conn.getMetaData().getDatabaseProductVersion();
             return new TestResult(true, "连接成功！数据库: " + dbProductName + " " + dbVersion);
@@ -33,11 +29,7 @@ public class ConnectionTestService {
 
     public static List<String> fetchTableList(DataSourceConfig config) {
         List<String> tables = new ArrayList<>();
-        String url = config.getJdbcUrl();
-        String username = config.getUsername();
-        String password = config.getPassword();
-
-        try (Connection conn = DriverManager.getConnection(url, username, password)) {
+        try (Connection conn = JdbcUtils.getConnection(config)) {
             ResultSet rs = conn.getMetaData().getTables(config.getDatabase(), null, "%", new String[]{"TABLE"});
             while (rs.next()) {
                 tables.add(rs.getString("TABLE_NAME"));
@@ -50,14 +42,10 @@ public class ConnectionTestService {
 
     public static List<String> fetchColumnNames(DataSourceConfig config, String tableName) {
         List<String> columns = new ArrayList<>();
-        String url = config.getJdbcUrl();
-        String username = config.getUsername();
-        String password = config.getPassword();
-
-        try (Connection conn = DriverManager.getConnection(url, username, password)) {
-            ResultSet rs = conn.getMetaData().getColumns(config.getDatabase(), null, tableName, "%");
-            while (rs.next()) {
-                columns.add(rs.getString("COLUMN_NAME"));
+        try {
+            List<JdbcUtils.ColumnDetail> details = JdbcUtils.loadColumnDetails(config, tableName);
+            for (JdbcUtils.ColumnDetail d : details) {
+                columns.add(d.name);
             }
         } catch (SQLException e) {
             // return whatever we got

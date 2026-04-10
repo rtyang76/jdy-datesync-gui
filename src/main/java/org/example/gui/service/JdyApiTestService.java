@@ -1,15 +1,19 @@
 package org.example.gui.service;
 
+import okhttp3.*;
 import org.example.gui.model.JdyAppConfig;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
+import java.io.IOException;
+import java.util.concurrent.TimeUnit;
 
 public class JdyApiTestService {
 
     private static final String APP_LIST_URL = "https://api.jiandaoyun.com/api/v5/app/list";
+    private static final MediaType JSON_MEDIA_TYPE = MediaType.get("application/json; charset=utf-8");
+    private static final OkHttpClient httpClient = new OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
+            .build();
 
     public static TestResult testConnection(JdyAppConfig config) {
         if (config.getApiToken() == null || config.getApiToken().trim().isEmpty()) {
@@ -22,43 +26,31 @@ public class JdyApiTestService {
         }
 
         try {
-            URL url = new URL(APP_LIST_URL);
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("POST");
-            conn.setRequestProperty("Content-Type", "application/json");
-            conn.setRequestProperty("Authorization", token);
-            conn.setConnectTimeout(10000);
-            conn.setReadTimeout(10000);
-            conn.setDoOutput(true);
+            RequestBody body = RequestBody.create("{\"skip\":0,\"limit\":1}", JSON_MEDIA_TYPE);
+            Request request = new Request.Builder()
+                    .url(APP_LIST_URL)
+                    .post(body)
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", token)
+                    .build();
 
-            String body = "{\"skip\":0,\"limit\":1}";
-            conn.getOutputStream().write(body.getBytes("UTF-8"));
-            conn.getOutputStream().flush();
-            conn.getOutputStream().close();
+            try (Response response = httpClient.newCall(request).execute()) {
+                ResponseBody responseBody = response.body();
+                String responseStr = responseBody != null ? responseBody.string() : "";
 
-            int responseCode = conn.getResponseCode();
-            BufferedReader reader = new BufferedReader(new InputStreamReader(
-                    responseCode == 200 ? conn.getInputStream() : conn.getErrorStream(), "UTF-8"));
-            StringBuilder response = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                response.append(line);
-            }
-            reader.close();
-
-            if (responseCode == 200) {
-                String resp = response.toString();
-                if (resp.contains("\"apps\"")) {
-                    return new TestResult(true, "连接成功！简道云API响应正常");
+                if (response.code() == 200) {
+                    if (responseStr.contains("\"apps\"")) {
+                        return new TestResult(true, "连接成功！简道云API响应正常");
+                    } else {
+                        return new TestResult(false, "API返回: " + responseStr);
+                    }
+                } else if (response.code() == 401) {
+                    return new TestResult(false, "认证失败：API Token 无效或已过期");
                 } else {
-                    return new TestResult(false, "API返回: " + resp);
+                    return new TestResult(false, "HTTP " + response.code() + ": " + responseStr);
                 }
-            } else if (responseCode == 401) {
-                return new TestResult(false, "认证失败：API Token 无效或已过期");
-            } else {
-                return new TestResult(false, "HTTP " + responseCode + ": " + response.toString());
             }
-        } catch (Exception e) {
+        } catch (IOException e) {
             return new TestResult(false, "连接失败: " + e.getMessage());
         }
     }

@@ -8,20 +8,21 @@ import org.example.gui.model.SyncProgress;
 import org.example.gui.model.SyncTaskConfig;
 
 import org.example.gui.model.FormMappingConfig;
-import org.example.gui.model.SubTableMapping;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.UUID;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.logging.Logger;
 
 public class ConfigManager {
 
+    private static final Logger logger = Logger.getLogger(ConfigManager.class.getName());
     private static final String CONFIG_DIR = ".jdy-datesync";
     private static final String DATA_SOURCES_FILE = "data_sources.json";
     private static final String JDY_APPS_FILE = "jdy_apps.json";
@@ -31,6 +32,7 @@ public class ConfigManager {
 
     private final Path configDir;
     private final ObjectMapper mapper;
+    private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 
     public ConfigManager() {
         this.configDir = Paths.get(System.getProperty("user.home"), CONFIG_DIR);
@@ -41,47 +43,22 @@ public class ConfigManager {
         } catch (IOException e) {
             throw new RuntimeException("无法创建配置目录: " + configDir, e);
         }
-        migrateLegacyTasks();
     }
 
     public List<DataSourceConfig> loadDataSources() {
-        File file = configDir.resolve(DATA_SOURCES_FILE).toFile();
-        if (!file.exists()) return new ArrayList<>();
-        try {
-            DataSourceConfig[] configs = mapper.readValue(file, DataSourceConfig[].class);
-            return List.of(configs);
-        } catch (IOException e) {
-            return new ArrayList<>();
-        }
+        return loadConfig(DATA_SOURCES_FILE, DataSourceConfig[].class);
     }
 
     public void saveDataSources(List<DataSourceConfig> configs) {
-        File file = configDir.resolve(DATA_SOURCES_FILE).toFile();
-        try {
-            mapper.writeValue(file, configs);
-        } catch (IOException e) {
-            throw new RuntimeException("保存数据源配置失败", e);
-        }
+        saveConfig(DATA_SOURCES_FILE, configs, "数据源配置");
     }
 
     public List<JdyAppConfig> loadJdyApps() {
-        File file = configDir.resolve(JDY_APPS_FILE).toFile();
-        if (!file.exists()) return new ArrayList<>();
-        try {
-            JdyAppConfig[] configs = mapper.readValue(file, JdyAppConfig[].class);
-            return List.of(configs);
-        } catch (IOException e) {
-            return new ArrayList<>();
-        }
+        return loadConfig(JDY_APPS_FILE, JdyAppConfig[].class);
     }
 
     public void saveJdyApps(List<JdyAppConfig> configs) {
-        File file = configDir.resolve(JDY_APPS_FILE).toFile();
-        try {
-            mapper.writeValue(file, configs);
-        } catch (IOException e) {
-            throw new RuntimeException("保存简道云应用配置失败", e);
-        }
+        saveConfig(JDY_APPS_FILE, configs, "简道云应用配置");
     }
 
     public JdyAppConfig findJdyAppById(String id) {
@@ -92,41 +69,40 @@ public class ConfigManager {
     }
 
     public List<SyncTaskConfig> loadSyncTasks() {
-        File file = configDir.resolve(SYNC_TASKS_FILE).toFile();
-        if (!file.exists()) return new ArrayList<>();
-        try {
-            SyncTaskConfig[] configs = mapper.readValue(file, SyncTaskConfig[].class);
-            return List.of(configs);
-        } catch (IOException e) {
-            return new ArrayList<>();
-        }
+        return loadConfig(SYNC_TASKS_FILE, SyncTaskConfig[].class);
     }
 
     public void saveSyncTasks(List<SyncTaskConfig> configs) {
-        File file = configDir.resolve(SYNC_TASKS_FILE).toFile();
-        try {
-            mapper.writeValue(file, configs);
-        } catch (IOException e) {
-            throw new RuntimeException("保存同步任务配置失败", e);
-        }
+        saveConfig(SYNC_TASKS_FILE, configs, "同步任务配置");
     }
 
     public SyncProgress loadSyncProgress() {
-        File file = configDir.resolve(SYNC_PROGRESS_FILE).toFile();
-        if (!file.exists()) return new SyncProgress();
+        lock.readLock().lock();
         try {
-            return mapper.readValue(file, SyncProgress.class);
-        } catch (IOException e) {
-            return new SyncProgress();
+            File file = configDir.resolve(SYNC_PROGRESS_FILE).toFile();
+            if (!file.exists()) return new SyncProgress();
+            try {
+                return mapper.readValue(file, SyncProgress.class);
+            } catch (IOException e) {
+                logger.warning("加载同步进度失败: " + e.getMessage());
+                return new SyncProgress();
+            }
+        } finally {
+            lock.readLock().unlock();
         }
     }
 
     public void saveSyncProgress(SyncProgress progress) {
-        File file = configDir.resolve(SYNC_PROGRESS_FILE).toFile();
+        lock.writeLock().lock();
         try {
-            mapper.writeValue(file, progress);
-        } catch (IOException e) {
-            throw new RuntimeException("保存同步进度失败", e);
+            File file = configDir.resolve(SYNC_PROGRESS_FILE).toFile();
+            try {
+                mapper.writeValue(file, progress);
+            } catch (IOException e) {
+                throw new RuntimeException("保存同步进度失败", e);
+            }
+        } finally {
+            lock.writeLock().unlock();
         }
     }
 
@@ -135,24 +111,12 @@ public class ConfigManager {
     }
 
     public List<FormMappingConfig> loadFormMappings() {
-        File file = configDir.resolve(FORM_MAPPINGS_FILE).toFile();
-        if (!file.exists()) return new ArrayList<>();
-        try {
-            FormMappingConfig[] configs = mapper.readValue(file, FormMappingConfig[].class);
-            return List.of(configs);
-        } catch (IOException e) {
-            return new ArrayList<>();
-        }
+        return loadConfig(FORM_MAPPINGS_FILE, FormMappingConfig[].class);
     }
 
     public void saveFormMappings(List<FormMappingConfig> configs) {
-        File file = configDir.resolve(FORM_MAPPINGS_FILE).toFile();
-        try {
-            if (configs == null) configs = new ArrayList<>();
-            mapper.writeValue(file, configs);
-        } catch (Exception e) {
-            throw new RuntimeException("保存表单映射配置失败: " + e.getMessage(), e);
-        }
+        if (configs == null) configs = new ArrayList<>();
+        saveConfig(FORM_MAPPINGS_FILE, configs, "表单映射配置");
     }
 
     public FormMappingConfig findFormMappingById(String id) {
@@ -162,28 +126,35 @@ public class ConfigManager {
                 .findFirst().orElse(null);
     }
 
-    private void migrateLegacyTasks() {
-        List<SyncTaskConfig> tasks = loadSyncTasks();
-        boolean hasLegacy = false;
-        for (SyncTaskConfig task : tasks) {
-            if (task.hasLegacyFields() && (task.getFormMappingId() == null || task.getFormMappingId().isEmpty())) {
-                hasLegacy = true;
-                FormMappingConfig mapping = new FormMappingConfig();
-                mapping.setId(UUID.randomUUID().toString());
-                mapping.setName(task.getName() + " - 主表映射");
-                mapping.setDataSourceId(task.getDataSourceId());
-                mapping.setJdyAppId(task.getJdyAppId());
-                mapping.setMainTableName(task.getSourceTable());
-                mapping.setMainEntryId(task.getEntryId());
-                mapping.setMainFieldMapping(task.getFieldMapping() != null ? task.getFieldMapping() : new HashMap<>());
-                saveFormMappings(List.of(mapping));
-
-                task.setFormMappingId(mapping.getId());
-                task.clearLegacyFields();
+    private <T> List<T> loadConfig(String fileName, Class<T[]> arrayClass) {
+        lock.readLock().lock();
+        try {
+            File file = configDir.resolve(fileName).toFile();
+            if (!file.exists()) return new ArrayList<>();
+            try {
+                T[] configs = mapper.readValue(file, arrayClass);
+                return List.of(configs);
+            } catch (IOException e) {
+                logger.warning("加载配置失败 [" + fileName + "]: " + e.getMessage());
+                return new ArrayList<>();
             }
+        } finally {
+            lock.readLock().unlock();
         }
-        if (hasLegacy) {
-            saveSyncTasks(tasks);
+    }
+
+    private <T> void saveConfig(String fileName, List<T> configs, String label) {
+        lock.writeLock().lock();
+        try {
+            Path filePath = configDir.resolve(fileName);
+            try {
+                byte[] data = mapper.writeValueAsBytes(configs);
+                Files.write(filePath, data, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            } catch (IOException e) {
+                throw new RuntimeException("保存" + label + "失败", e);
+            }
+        } finally {
+            lock.writeLock().unlock();
         }
     }
 }

@@ -1,35 +1,25 @@
 package org.example.gui.model;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class SyncTaskConfig {
     private String id;
     private String name;
-    private String formMappingId;
-    private String incrementMode;
-    private String incrementField;
+    private List<String> formMappingIds;
     private int syncIntervalMinutes;
     private boolean enabled;
     private int maxBatchSize;
     private int maxRetry;
 
-    // Legacy fields for backward compatibility and migration
-    private String dataSourceId;
-    private String sourceTable;
-    private String jdyAppId;
-    private String entryId;
-    private Map<String, String> fieldMapping;
-
     public SyncTaskConfig() {
+        this.formMappingIds = new ArrayList<>();
         this.syncIntervalMinutes = 5;
         this.enabled = true;
         this.maxBatchSize = 50;
         this.maxRetry = 3;
-        this.incrementMode = "id";
-        this.fieldMapping = new HashMap<>();
     }
 
     public String getId() { return id; }
@@ -38,14 +28,8 @@ public class SyncTaskConfig {
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
 
-    public String getFormMappingId() { return formMappingId; }
-    public void setFormMappingId(String formMappingId) { this.formMappingId = formMappingId; }
-
-    public String getIncrementMode() { return incrementMode; }
-    public void setIncrementMode(String incrementMode) { this.incrementMode = incrementMode; }
-
-    public String getIncrementField() { return incrementField; }
-    public void setIncrementField(String incrementField) { this.incrementField = incrementField; }
+    public List<String> getFormMappingIds() { return formMappingIds != null ? formMappingIds : new ArrayList<>(); }
+    public void setFormMappingIds(List<String> formMappingIds) { this.formMappingIds = formMappingIds != null ? formMappingIds : new ArrayList<>(); }
 
     public int getSyncIntervalMinutes() { return syncIntervalMinutes; }
     public void setSyncIntervalMinutes(int syncIntervalMinutes) { this.syncIntervalMinutes = syncIntervalMinutes; }
@@ -58,35 +42,6 @@ public class SyncTaskConfig {
 
     public int getMaxRetry() { return maxRetry; }
     public void setMaxRetry(int maxRetry) { this.maxRetry = maxRetry; }
-
-    public String getDataSourceId() { return dataSourceId; }
-    public void setDataSourceId(String dataSourceId) { this.dataSourceId = dataSourceId; }
-
-    public String getSourceTable() { return sourceTable; }
-    public void setSourceTable(String sourceTable) { this.sourceTable = sourceTable; }
-
-    public String getJdyAppId() { return jdyAppId; }
-    public void setJdyAppId(String jdyAppId) { this.jdyAppId = jdyAppId; }
-
-    public String getEntryId() { return entryId; }
-    public void setEntryId(String entryId) { this.entryId = entryId; }
-
-    public Map<String, String> getFieldMapping() { return fieldMapping; }
-    public void setFieldMapping(Map<String, String> fieldMapping) { this.fieldMapping = fieldMapping; }
-
-    public boolean hasLegacyFields() {
-        return (sourceTable != null && !sourceTable.isEmpty())
-            || (entryId != null && !entryId.isEmpty())
-            || (fieldMapping != null && !fieldMapping.isEmpty());
-    }
-
-    public void clearLegacyFields() {
-        this.dataSourceId = null;
-        this.sourceTable = null;
-        this.jdyAppId = null;
-        this.entryId = null;
-        this.fieldMapping = null;
-    }
 
     @Override
     public String toString() {
