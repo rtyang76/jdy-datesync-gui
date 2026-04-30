@@ -13,6 +13,8 @@ import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
@@ -59,37 +61,94 @@ public class SyncEngine {
             return new SyncResult(false, "任务未关联任何表单映射配置");
         }
 
+        SyncStatus status = new SyncStatus();
+        status.setTaskId(taskId);
+        status.setTaskName(task.getName());
+        status.markStart(task.getSyncDirection());
+        configManager.updateSyncStatus(status);
+
         StringBuilder resultMsg = new StringBuilder();
         int successCount = 0;
         int failCount = 0;
+        int totalConflicts = 0;
 
-        for (String mappingId : mappingIds) {
-            FormMappingConfig formMapping = configManager.findFormMappingById(mappingId);
-            if (formMapping == null) {
-                failCount++;
-                resultMsg.append("表单映射配置不存在: ").append(mappingId).append("; ");
-                continue;
-            }
+        try {
+            if (SyncTaskConfig.DIRECTION_BOTH.equals(task.getSyncDirection())) {
+                for (String mappingId : mappingIds) {
+                    FormMappingConfig formMapping = configManager.findFormMappingById(mappingId);
+                    if (formMapping == null) {
+                        failCount++;
+                        resultMsg.append("表单映射配置不存在: ").append(mappingId).append("; ");
+                        continue;
+                    }
 
-            SyncResult result = executeSingleMapping(task, formMapping);
-            if (result.isSuccess()) {
-                successCount++;
+                    SyncResult result = executeBidirectionalSync(task, formMapping);
+                    if (result.isSuccess()) {
+                        successCount++;
+                    } else {
+                        failCount++;
+                        resultMsg.append(formMapping.getName()).append(": ").append(result.getMessage()).append("; ");
+                    }
+                }
             } else {
-                failCount++;
-                resultMsg.append(formMapping.getName()).append(": ").append(result.getMessage()).append("; ");
-            }
-        }
+                if (task.isPush()) {
+                    for (String mappingId : mappingIds) {
+                        FormMappingConfig formMapping = configManager.findFormMappingById(mappingId);
+                        if (formMapping == null) {
+                            failCount++;
+                            resultMsg.append("表单映射配置不存在: ").append(mappingId).append("; ");
+                            continue;
+                        }
 
-        if (failCount == 0) {
-            return new SyncResult(true, "成功推送 " + successCount + " 个表单映射");
-        } else if (successCount == 0) {
-            return new SyncResult(false, "全部失败: " + resultMsg.toString());
-        } else {
-            return new SyncResult(true, "部分成功: 成功 " + successCount + " 个，失败 " + failCount + " 个");
+                        SyncResult result = executePushMapping(task, formMapping);
+                        if (result.isSuccess()) {
+                            successCount++;
+                        } else {
+                            failCount++;
+                            resultMsg.append(formMapping.getName()).append(": ").append(result.getMessage()).append("; ");
+                        }
+                    }
+                }
+
+                if (task.isPull()) {
+                    for (String mappingId : mappingIds) {
+                        FormMappingConfig formMapping = configManager.findFormMappingById(mappingId);
+                        if (formMapping == null) {
+                            failCount++;
+                            resultMsg.append("拉取-表单映射配置不存在: ").append(mappingId).append("; ");
+                            continue;
+                        }
+
+                        SyncResult result = executePullMapping(task, formMapping);
+                        if (result.isSuccess()) {
+                            successCount++;
+                        } else {
+                            failCount++;
+                            resultMsg.append("拉取-").append(formMapping.getName()).append(": ").append(result.getMessage()).append("; ");
+                        }
+                    }
+                }
+            }
+
+            if (failCount == 0) {
+                status.markSuccess("成功执行 " + successCount + " 个映射");
+                return new SyncResult(true, "成功执行 " + successCount + " 个映射");
+            } else if (successCount == 0) {
+                status.markFailed("全部失败", resultMsg.toString());
+                return new SyncResult(false, "全部失败: " + resultMsg.toString());
+            } else {
+                status.markSuccess("部分成功: 成功 " + successCount + " 个，失败 " + failCount + " 个");
+                return new SyncResult(true, "部分成功: 成功 " + successCount + " 个，失败 " + failCount + " 个");
+            }
+        } catch (Exception e) {
+            status.markFailed("执行异常", e.getMessage());
+            throw e;
+        } finally {
+            configManager.updateSyncStatus(status);
         }
     }
 
-    private SyncResult executeSingleMapping(SyncTaskConfig task, FormMappingConfig formMapping) {
+    private SyncResult executePushMapping(SyncTaskConfig task, FormMappingConfig formMapping) {
         List<DataSourceConfig> dataSources = configManager.loadDataSources();
 
         DataSourceConfig ds = dataSources.stream()
@@ -166,17 +225,22 @@ public class SyncEngine {
         validateSqlIdentifier(formMapping.getMainTableName(), "主表名");
         validateSqlIdentifier(incrementField, "增量字段");
 
-        String url = ds.getJdbcUrl();
         int totalCreated = 0;
         int totalUpdated = 0;
         String maxId = lastSyncIdStr;
         boolean hadData = false;
         boolean pushFailed = false;
 
-        try (Connection conn = DriverManager.getConnection(url, ds.getUsername(), ds.getPassword())) {
+        try (Connection conn = JdbcUtils.getConnection(ds)) {
             while (true) {
-                String sql = "SELECT * FROM `" + formMapping.getMainTableName()
-                        + "` WHERE `" + incrementField + "` > ? ORDER BY `" + incrementField + "` ASC LIMIT ?";
+                String sql;
+                if (ds.isSqlServer()) {
+                    sql = "SELECT TOP " + task.getMaxBatchSize() + " * FROM " + ds.quoteIdentifier(formMapping.getMainTableName())
+                            + " WHERE " + ds.quoteIdentifier(incrementField) + " > ? ORDER BY " + ds.quoteIdentifier(incrementField) + " ASC";
+                } else {
+                    sql = "SELECT * FROM " + ds.quoteIdentifier(formMapping.getMainTableName())
+                            + " WHERE " + ds.quoteIdentifier(incrementField) + " > ? ORDER BY " + ds.quoteIdentifier(incrementField) + " ASC LIMIT ?";
+                }
 
                 logger.info("查询本地数据库SQL: " + sql + " [参数: " + lastSyncIdStr + ", " + task.getMaxBatchSize() + "]");
 
@@ -186,7 +250,9 @@ public class SyncEngine {
                     } else {
                         pstmt.setLong(1, parseLongSafe(lastSyncIdStr));
                     }
-                    pstmt.setInt(2, task.getMaxBatchSize());
+                    if (!ds.isSqlServer()) {
+                        pstmt.setInt(2, task.getMaxBatchSize());
+                    }
 
                     try (ResultSet rs = pstmt.executeQuery()) {
 
@@ -235,7 +301,7 @@ public class SyncEngine {
                             logger.info("匹配条件: 无，将全部走新建接口");
                         }
 
-                        int[] result = pushToJdy(jdyConfig, formMapping, batchData, activeMainMapping, conn, task.getMaxRetry(), primaryKeyField, incrementMode, hasQueryConditions, queryConfig);
+                        int[] result = pushToJdy(ds, jdyConfig, formMapping, batchData, activeMainMapping, conn, task.getMaxRetry(), primaryKeyField, incrementMode, hasQueryConditions, queryConfig);
                         int created = result[0];
                         int updated = result[1];
 
@@ -310,7 +376,7 @@ public class SyncEngine {
         }
     }
 
-    private int[] pushToJdy(JdyAppConfig jdyConfig, FormMappingConfig formMapping,
+    private int[] pushToJdy(DataSourceConfig ds, JdyAppConfig jdyConfig, FormMappingConfig formMapping,
                                List<Map<String, Object>> batchData,
                                Map<String, String> activeMainMapping,
                                Connection conn, int maxRetry, String primaryKeyField,
@@ -320,7 +386,7 @@ public class SyncEngine {
         int createdCount = 0;
         int updatedCount = 0;
 
-        List<Map<String, Object>> jdyPayload = buildJdyPayload(batchData, activeMainMapping, formMapping, conn, primaryKeyField);
+        List<Map<String, Object>> jdyPayload = buildJdyPayload(ds, batchData, activeMainMapping, formMapping, conn, primaryKeyField);
 
         if (!hasQueryConditions) {
             logger.info("无匹配条件，全部走批量新建接口");
@@ -417,7 +483,7 @@ public class SyncEngine {
         return new int[]{createdCount, updatedCount};
     }
 
-    private List<Map<String, Object>> buildJdyPayload(List<Map<String, Object>> batchData,
+    private List<Map<String, Object>> buildJdyPayload(DataSourceConfig ds, List<Map<String, Object>> batchData,
                                                         Map<String, String> activeMainMapping,
                                                         FormMappingConfig formMapping,
                                                         Connection conn, String primaryKeyField) throws Exception {
@@ -441,7 +507,7 @@ public class SyncEngine {
                     continue;
                 }
                 Map<String, List<Map<String, Object>>> grouped = batchQuerySubTable(
-                        conn, subMapping.getSubTableName(), joinConditions, batchData);
+                        ds, conn, subMapping.getSubTableName(), joinConditions, batchData);
                 subTableCache.put(subMapping.getSubTableName(), grouped);
                 logger.info("子表 " + subMapping.getSubTableName() + " 预加载完成，共 " + grouped.size() + " 个分组");
             }
@@ -749,7 +815,7 @@ public class SyncEngine {
     }
 
     private Map<String, List<Map<String, Object>>> batchQuerySubTable(
-            Connection conn, String subTableName,
+            DataSourceConfig ds, Connection conn, String subTableName,
             List<SubTableJoinCondition> joinConditions,
             List<Map<String, Object>> batchData) throws Exception {
 
@@ -783,14 +849,14 @@ public class SyncEngine {
         }
 
         StringBuilder whereClause = new StringBuilder();
-        whereClause.append("`").append(firstSubField).append("` IN (").append(inClause).append(")");
+        whereClause.append(ds.quoteIdentifier(firstSubField)).append(" IN (").append(inClause).append(")");
 
         for (int i = 1; i < joinConditions.size(); i++) {
             SubTableJoinCondition cond = joinConditions.get(i);
-            whereClause.append(" AND `").append(cond.getSubTableField()).append("` IS NOT NULL");
+            whereClause.append(" AND ").append(ds.quoteIdentifier(cond.getSubTableField())).append(" IS NOT NULL");
         }
 
-        String sql = "SELECT * FROM `" + subTableName + "` WHERE " + whereClause;
+        String sql = "SELECT * FROM " + ds.quoteIdentifier(subTableName) + " WHERE " + whereClause;
         logger.info("子表批量查询SQL: " + sql + ", 参数数量: " + params.size());
 
         Map<String, List<Map<String, Object>>> grouped = new LinkedHashMap<>();
@@ -836,30 +902,33 @@ public class SyncEngine {
         return key.toString();
     }
 
+    private static final ZoneId ZONE_SHANGHAI = ZoneId.of("Asia/Shanghai");
+    private static final DateTimeFormatter ISO8601_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX");
+
     private Map<String, Object> wrapValue(Object value) {
         if (value == null) {
             return Collections.singletonMap("value", "");
         }
 
         if (value instanceof LocalDate) {
-            return Collections.singletonMap("value", ((LocalDate) value).format(DateTimeFormatter.ISO_LOCAL_DATE));
+            return Collections.singletonMap("value", ((LocalDate) value).atStartOfDay(ZONE_SHANGHAI).format(ISO8601_FORMATTER));
         }
 
         if (value instanceof LocalDateTime) {
-            return Collections.singletonMap("value", ((LocalDateTime) value).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+            return Collections.singletonMap("value", ((LocalDateTime) value).atZone(ZONE_SHANGHAI).format(ISO8601_FORMATTER));
         }
 
         if (value instanceof java.sql.Date) {
-            return Collections.singletonMap("value", value.toString());
+            return Collections.singletonMap("value", ((java.sql.Date) value).toLocalDate().atStartOfDay(ZONE_SHANGHAI).format(ISO8601_FORMATTER));
         }
 
         if (value instanceof java.sql.Timestamp) {
             java.sql.Timestamp ts = (java.sql.Timestamp) value;
-            return Collections.singletonMap("value", ts.toLocalDateTime().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+            return Collections.singletonMap("value", ts.toInstant().atZone(ZONE_SHANGHAI).format(ISO8601_FORMATTER));
         }
 
         if (value instanceof java.util.Date) {
-            return Collections.singletonMap("value", new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(value));
+            return Collections.singletonMap("value", ((java.util.Date) value).toInstant().atZone(ZONE_SHANGHAI).format(ISO8601_FORMATTER));
         }
 
         return Collections.singletonMap("value", value.toString().trim());
@@ -885,6 +954,511 @@ public class SyncEngine {
         } catch (Exception e) {
             return 0;
         }
+    }
+
+    private SyncResult executePullMapping(SyncTaskConfig task, FormMappingConfig formMapping) {
+        List<DataSourceConfig> dataSources = configManager.loadDataSources();
+        DataSourceConfig ds = dataSources.stream()
+                .filter(d -> d.getId().equals(formMapping.getDataSourceId()))
+                .findFirst().orElse(null);
+
+        if (ds == null) {
+            return new SyncResult(false, "数据源不存在: " + formMapping.getDataSourceId());
+        }
+
+        JdyAppConfig jdyConfig = configManager.findJdyAppById(formMapping.getJdyAppId());
+        if (jdyConfig == null) {
+            return new SyncResult(false, "简道云应用未配置或已删除");
+        }
+        if (jdyConfig.getApiToken() == null || jdyConfig.getApiToken().trim().isEmpty()) {
+            return new SyncResult(false, "简道云应用 API Token 未配置: " + jdyConfig.getName());
+        }
+
+        Map<String, String> pullMapping = formMapping.getPullFieldMapping();
+        if (pullMapping == null || pullMapping.isEmpty()) {
+            return new SyncResult(false, "拉取字段映射未配置（简道云控件ID → 数据库字段）");
+        }
+
+        Map<String, String> activePullMapping = new LinkedHashMap<>();
+        pullMapping.forEach((k, v) -> {
+            if (k != null && !k.trim().isEmpty() && v != null && !v.trim().isEmpty()) {
+                activePullMapping.put(k.trim(), v.trim());
+            }
+        });
+
+        if (activePullMapping.isEmpty()) {
+            return new SyncResult(false, "没有配置任何有效的拉取字段映射");
+        }
+
+        String pullMatchField = formMapping.getPullMatchField();
+        if (pullMatchField == null || pullMatchField.trim().isEmpty()) {
+            return new SyncResult(false, "拉取匹配字段未配置（用于判断本地是否已存在记录）");
+        }
+
+        SyncProgress progress = configManager.loadSyncProgress();
+        String lastPullId = progress.getLastPullId(formMapping.getId());
+
+        logger.info("========== 开始拉取同步 ==========");
+        logger.info("任务名称: " + task.getName());
+        logger.info("表单配置: " + formMapping.getName());
+        logger.info("上次拉取ID: " + (lastPullId.isEmpty() ? "无" : lastPullId));
+
+        try {
+            return pullDataFromJdy(ds, jdyConfig, formMapping, activePullMapping, pullMatchField.trim(), lastPullId, progress, task.getMaxBatchSize());
+        } catch (Exception e) {
+            logger.severe("拉取同步异常: " + e.getMessage());
+            return new SyncResult(false, "拉取异常: " + e.getMessage());
+        }
+    }
+
+    private SyncResult executeBidirectionalSync(SyncTaskConfig task, FormMappingConfig formMapping) {
+        logger.info("========== 开始双向同步 ==========");
+        logger.info("任务名称: " + task.getName());
+        logger.info("表单配置: " + formMapping.getName());
+
+        List<DataSourceConfig> dataSources = configManager.loadDataSources();
+        DataSourceConfig ds = dataSources.stream()
+                .filter(d -> d.getId().equals(formMapping.getDataSourceId()))
+                .findFirst().orElse(null);
+
+        if (ds == null) {
+            return new SyncResult(false, "数据源不存在: " + formMapping.getDataSourceId());
+        }
+
+        JdyAppConfig jdyConfig = configManager.findJdyAppById(formMapping.getJdyAppId());
+        if (jdyConfig == null) {
+            return new SyncResult(false, "简道云应用未配置或已删除");
+        }
+
+        int totalPushed = 0;
+        int totalPulled = 0;
+        int totalConflicts = 0;
+
+        try {
+            SyncResult pushResult = executePushMapping(task, formMapping);
+            if (pushResult.isSuccess()) {
+                String msg = pushResult.getMessage();
+                if (msg.contains("新建")) {
+                    totalPushed += extractNumber(msg, "新建 ");
+                }
+                if (msg.contains("更新")) {
+                    totalPushed += extractNumber(msg, "更新 ");
+                }
+            }
+
+            SyncResult pullResult = executePullMapping(task, formMapping);
+            if (pullResult.isSuccess()) {
+                String msg = pullResult.getMessage();
+                if (msg.contains("新增")) {
+                    totalPulled += extractNumber(msg, "新增 ");
+                }
+                if (msg.contains("更新")) {
+                    totalPulled += extractNumber(msg, "更新 ");
+                }
+            }
+
+            logger.info("========== 双向同步结束 ==========");
+            logger.info("推送: " + totalPushed + " 条, 拉取: " + totalPulled + " 条, 冲突: " + totalConflicts + " 条");
+
+            return new SyncResult(true, "双向同步完成，推送 " + totalPushed + " 条，拉取 " + totalPulled + " 条");
+        } catch (Exception e) {
+            logger.severe("双向同步异常: " + e.getMessage());
+            return new SyncResult(false, "双向同步异常: " + e.getMessage());
+        }
+    }
+
+    private int extractNumber(String message, String prefix) {
+        try {
+            int start = message.indexOf(prefix);
+            if (start >= 0) {
+                start += prefix.length();
+                int end = message.indexOf(" ", start);
+                if (end < 0) end = message.length();
+                return Integer.parseInt(message.substring(start, end).trim());
+            }
+        } catch (Exception e) {
+            // ignore
+        }
+        return 0;
+    }
+
+    private SyncResult pullDataFromJdy(DataSourceConfig ds, JdyAppConfig jdyConfig,
+                                        FormMappingConfig formMapping,
+                                        Map<String, String> pullMapping,
+                                        String pullMatchField,
+                                        String lastPullId,
+                                        SyncProgress progress,
+                                        int batchSize) throws Exception {
+        int totalInserted = 0;
+        int totalUpdated = 0;
+        String maxDataId = lastPullId;
+        boolean hasMore = true;
+
+        try (Connection conn = JdbcUtils.getConnection(ds)) {
+            while (hasMore) {
+                Map<String, Object> body = new LinkedHashMap<>();
+                body.put("app_id", jdyConfig.getAppId());
+                body.put("entry_id", formMapping.getMainEntryId());
+                body.put("limit", batchSize);
+
+                List<String> fields = new ArrayList<>(pullMapping.keySet());
+                body.put("fields", fields);
+
+                if (lastPullId != null && !lastPullId.isEmpty()) {
+                    Map<String, Object> filter = new LinkedHashMap<>();
+                    filter.put("rel", "and");
+                    List<Map<String, Object>> conditions = new ArrayList<>();
+                    Map<String, Object> condMap = new LinkedHashMap<>();
+                    condMap.put("field", "_id");
+                    condMap.put("type", "text");
+                    condMap.put("method", "gt");
+                    condMap.put("value", List.of(lastPullId));
+                    conditions.add(condMap);
+                    filter.put("cond", conditions);
+                    body.put("filter", filter);
+                }
+
+                String jsonBody = mapper.writeValueAsString(body);
+                logger.info("拉取请求: " + jsonBody.substring(0, Math.min(jsonBody.length(), 500)));
+
+                Request request = buildJdyRequest(QUERY_URL, jdyConfig, jsonBody);
+                String response = executeRequest(request);
+
+                Map<String, Object> resp = mapper.readValue(response, Map.class);
+                List<Map<String, Object>> dataList = new ArrayList<>();
+
+                if ("success".equals(resp.get("status")) && resp.get("data") instanceof List) {
+                    dataList = (List<Map<String, Object>>) resp.get("data");
+                } else if (resp.get("data") instanceof List) {
+                    dataList = (List<Map<String, Object>>) resp.get("data");
+                }
+
+                if (dataList.isEmpty()) {
+                    logger.info("拉取结果: 无新数据");
+                    break;
+                }
+
+                logger.info("拉取到 " + dataList.size() + " 条数据");
+
+                for (Map<String, Object> jdyRow : dataList) {
+                    String dataId = (String) jdyRow.get("_id");
+                    if (dataId != null && dataId.compareTo(maxDataId) > 0) {
+                        maxDataId = dataId;
+                    }
+
+                    Map<String, Object> dbRow = new LinkedHashMap<>();
+                    for (Map.Entry<String, String> entry : pullMapping.entrySet()) {
+                        String widgetId = entry.getKey();
+                        String dbColumn = entry.getValue();
+                        Object rawValue = jdyRow.get(widgetId);
+                        Object extracted = extractJdyValue(rawValue);
+                        dbRow.put(dbColumn, extracted);
+                    }
+
+                    String matchValue = null;
+                    Object matchRaw = jdyRow.get(pullMapping.entrySet().stream()
+                            .filter(e -> e.getValue().equals(pullMatchField))
+                            .map(Map.Entry::getKey)
+                            .findFirst().orElse(""));
+                    if (matchRaw != null) {
+                        matchValue = extractJdyValue(matchRaw).toString();
+                    }
+
+                    boolean exists = checkRecordExists(conn, ds, formMapping.getMainTableName(), pullMatchField, matchValue);
+
+                    if (exists) {
+                        int updated = updateLocalRecord(conn, ds, formMapping.getMainTableName(), dbRow, pullMatchField, matchValue);
+                        if (updated > 0) totalUpdated++;
+                    } else {
+                        insertLocalRecord(conn, ds, formMapping.getMainTableName(), dbRow);
+                        totalInserted++;
+                    }
+                }
+
+                progress.setLastPullId(formMapping.getId(), maxDataId);
+                configManager.saveSyncProgress(progress);
+
+                hasMore = dataList.size() >= batchSize;
+                lastPullId = maxDataId;
+            }
+        }
+
+        logger.info("========== 拉取同步结束 ==========");
+        if (totalInserted > 0 || totalUpdated > 0) {
+            return new SyncResult(true, "拉取完成，新增 " + totalInserted + " 条，更新 " + totalUpdated + " 条");
+        } else {
+            return new SyncResult(true, "无新数据需要拉取");
+        }
+    }
+
+    private static final DateTimeFormatter ISO8601_WITH_Z = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
+    private static final DateTimeFormatter MYSQL_DATETIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final ZoneId ZONE_UTC = ZoneId.of("UTC");
+
+    private Object extractJdyValue(Object rawValue) {
+        if (rawValue == null) {
+            return "";
+        }
+
+        String strVal = rawValue.toString().trim();
+
+        if ("true".equalsIgnoreCase(strVal)) {
+            return 1;
+        }
+        if ("false".equalsIgnoreCase(strVal)) {
+            return 0;
+        }
+
+        if (strVal.matches("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z")) {
+            try {
+                LocalDateTime dt = LocalDateTime.parse(strVal, ISO8601_WITH_Z.withLocale(java.util.Locale.ENGLISH));
+                return dt.atZone(ZONE_UTC).withZoneSameInstant(ZONE_SHANGHAI).format(MYSQL_DATETIME);
+            } catch (Exception e) {
+                return strVal;
+            }
+        }
+
+        if (strVal.matches("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z")) {
+            try {
+                LocalDateTime dt = LocalDateTime.parse(strVal.substring(0, 19), DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+                return dt.atZone(ZONE_UTC).withZoneSameInstant(ZONE_SHANGHAI).format(MYSQL_DATETIME);
+            } catch (Exception e) {
+                return strVal;
+            }
+        }
+
+        if (rawValue instanceof Map) {
+            Map<?, ?> map = (Map<?, ?>) rawValue;
+            if (map.containsKey("value")) {
+                Object v = map.get("value");
+                return v != null ? extractJdyValue(v) : "";
+            }
+            return strVal;
+        }
+
+        if (rawValue instanceof List) {
+            List<?> list = (List<?>) rawValue;
+            if (list.isEmpty()) return "";
+            if (list.size() == 1) {
+                Object item = list.get(0);
+                if (item instanceof Map) {
+                    Map<?, ?> map = (Map<?, ?>) item;
+                    if (map.containsKey("value")) {
+                        return map.get("value") != null ? map.get("value").toString() : "";
+                    }
+                    if (map.containsKey("username")) {
+                        return map.get("username") != null ? map.get("username").toString() : "";
+                    }
+                }
+                return item.toString();
+            }
+            StringBuilder sb = new StringBuilder();
+            for (Object item : list) {
+                if (item instanceof Map) {
+                    Map<?, ?> map = (Map<?, ?>) item;
+                    if (map.containsKey("value")) {
+                        if (sb.length() > 0) sb.append(",");
+                        sb.append(map.get("value") != null ? map.get("value").toString() : "");
+                    } else if (map.containsKey("username")) {
+                        if (sb.length() > 0) sb.append(",");
+                        sb.append(map.get("username") != null ? map.get("username").toString() : "");
+                    }
+                } else {
+                    if (sb.length() > 0) sb.append(",");
+                    sb.append(item.toString());
+                }
+            }
+            return sb.toString();
+        }
+        return rawValue.toString();
+    }
+
+    private boolean checkRecordExists(Connection conn, DataSourceConfig ds, String tableName,
+                                       String matchField, String matchValue) throws SQLException {
+        if (matchValue == null || matchValue.isEmpty()) return false;
+
+        String sql = "SELECT COUNT(*) FROM " + ds.quoteIdentifier(tableName)
+                + " WHERE " + ds.quoteIdentifier(matchField) + " = ?";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, matchValue);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getInt(1) > 0;
+                }
+            }
+        }
+        return false;
+    }
+
+    private int updateLocalRecord(Connection conn, DataSourceConfig ds, String tableName,
+                                   Map<String, Object> dbRow, String matchField, String matchValue) throws SQLException {
+        StringBuilder setClause = new StringBuilder();
+        List<Object> params = new ArrayList<>();
+
+        for (Map.Entry<String, Object> entry : dbRow.entrySet()) {
+            if (entry.getKey().equals(matchField)) continue;
+            if (setClause.length() > 0) setClause.append(", ");
+            setClause.append(ds.quoteIdentifier(entry.getKey())).append(" = ?");
+            params.add(entry.getValue());
+        }
+
+        if (setClause.length() == 0) return 0;
+
+        String sql = "UPDATE " + ds.quoteIdentifier(tableName) + " SET " + setClause
+                + " WHERE " + ds.quoteIdentifier(matchField) + " = ?";
+        params.add(matchValue);
+
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            for (int i = 0; i < params.size(); i++) {
+                pstmt.setObject(i + 1, params.get(i));
+            }
+            return pstmt.executeUpdate();
+        }
+    }
+
+    private void insertLocalRecord(Connection conn, DataSourceConfig ds, String tableName,
+                                    Map<String, Object> dbRow) throws SQLException {
+        StringBuilder columns = new StringBuilder();
+        StringBuilder placeholders = new StringBuilder();
+        List<Object> params = new ArrayList<>();
+
+        for (Map.Entry<String, Object> entry : dbRow.entrySet()) {
+            if (columns.length() > 0) {
+                columns.append(", ");
+                placeholders.append(", ");
+            }
+            columns.append(ds.quoteIdentifier(entry.getKey()));
+            placeholders.append("?");
+            params.add(entry.getValue());
+        }
+
+        String sql = "INSERT INTO " + ds.quoteIdentifier(tableName) + " (" + columns + ") VALUES (" + placeholders + ")";
+
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            for (int i = 0; i < params.size(); i++) {
+                pstmt.setObject(i + 1, params.get(i));
+            }
+            pstmt.executeUpdate();
+        }
+    }
+
+    public SyncResult verifyDataConsistency(String taskId) {
+        List<SyncTaskConfig> tasks = configManager.loadSyncTasks();
+        SyncTaskConfig task = tasks.stream()
+                .filter(t -> t.getId().equals(taskId))
+                .findFirst().orElse(null);
+
+        if (task == null) {
+            return new SyncResult(false, "任务不存在: " + taskId);
+        }
+
+        StringBuilder report = new StringBuilder();
+        int totalChecked = 0;
+        int mismatchCount = 0;
+
+        for (String mappingId : task.getFormMappingIds()) {
+            FormMappingConfig formMapping = configManager.findFormMappingById(mappingId);
+            if (formMapping == null) continue;
+
+            List<DataSourceConfig> dataSources = configManager.loadDataSources();
+            DataSourceConfig ds = dataSources.stream()
+                    .filter(d -> d.getId().equals(formMapping.getDataSourceId()))
+                    .findFirst().orElse(null);
+
+            if (ds == null) continue;
+
+            JdyAppConfig jdyConfig = configManager.findJdyAppById(formMapping.getJdyAppId());
+            if (jdyConfig == null) continue;
+
+            try {
+                int[] result = verifyMappingConsistency(ds, jdyConfig, formMapping);
+                totalChecked += result[0];
+                mismatchCount += result[1];
+            } catch (Exception e) {
+                report.append(formMapping.getName()).append(" 校验失败: ").append(e.getMessage()).append("\n");
+            }
+        }
+
+        report.append("校验完成: 共检查 ").append(totalChecked).append(" 条记录，不一致 ").append(mismatchCount).append(" 条");
+
+        if (mismatchCount > 0) {
+            return new SyncResult(false, report.toString());
+        }
+        return new SyncResult(true, report.toString());
+    }
+
+    private int[] verifyMappingConsistency(DataSourceConfig ds, JdyAppConfig jdyConfig,
+                                            FormMappingConfig formMapping) throws Exception {
+        int totalChecked = 0;
+        int mismatchCount = 0;
+
+        String matchField = formMapping.getPullMatchField();
+        if (matchField == null || matchField.isEmpty()) {
+            return new int[]{0, 0};
+        }
+
+        try (Connection conn = JdbcUtils.getConnection(ds)) {
+            String sql = "SELECT " + ds.quoteIdentifier(matchField) + " FROM " + ds.quoteIdentifier(formMapping.getMainTableName())
+                    + " LIMIT 100";
+            try (PreparedStatement pstmt = conn.prepareStatement(sql);
+                 ResultSet rs = pstmt.executeQuery()) {
+
+                while (rs.next()) {
+                    String localValue = rs.getString(1);
+                    totalChecked++;
+
+                    boolean existsInJdy = checkJdyRecordExists(jdyConfig, formMapping, matchField, localValue);
+                    if (!existsInJdy) {
+                        mismatchCount++;
+                        logger.warning("一致性校验: 本地记录 " + matchField + "=" + localValue + " 在简道云中不存在");
+                    }
+                }
+            }
+        }
+
+        return new int[]{totalChecked, mismatchCount};
+    }
+
+    private boolean checkJdyRecordExists(JdyAppConfig jdyConfig, FormMappingConfig formMapping,
+                                          String matchField, String matchValue) {
+        try {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("app_id", jdyConfig.getAppId());
+            body.put("entry_id", formMapping.getMainEntryId());
+            body.put("limit", 1);
+
+            String widgetId = formMapping.getPullFieldMapping().entrySet().stream()
+                    .filter(e -> e.getValue().equals(matchField))
+                    .map(Map.Entry::getKey)
+                    .findFirst().orElse(null);
+
+            if (widgetId == null) return true;
+
+            Map<String, Object> filter = new LinkedHashMap<>();
+            filter.put("rel", "and");
+            List<Map<String, Object>> conditions = new ArrayList<>();
+            Map<String, Object> condMap = new LinkedHashMap<>();
+            condMap.put("field", widgetId);
+            condMap.put("type", "text");
+            condMap.put("method", "eq");
+            condMap.put("value", List.of(matchValue));
+            conditions.add(condMap);
+            filter.put("cond", conditions);
+            body.put("filter", filter);
+
+            String jsonBody = mapper.writeValueAsString(body);
+            Request request = buildJdyRequest(QUERY_URL, jdyConfig, jsonBody);
+            String response = executeRequest(request);
+
+            Map<String, Object> resp = mapper.readValue(response, Map.class);
+            if (resp.get("data") instanceof List) {
+                List<?> dataList = (List<?>) resp.get("data");
+                return !dataList.isEmpty();
+            }
+        } catch (Exception e) {
+            logger.warning("校验简道云记录存在性失败: " + e.getMessage());
+        }
+        return true;
     }
 
     public static class SyncResult {

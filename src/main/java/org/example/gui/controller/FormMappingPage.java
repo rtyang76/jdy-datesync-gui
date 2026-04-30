@@ -62,6 +62,11 @@ public class FormMappingPage {
     private Tab mainTableTab;
     private Tab queryTab;
     private Tab subTablesTab;
+    private Tab pullTab;
+
+    private TableView<ColumnMapping> pullMappingTable;
+    private List<ColumnMapping> pullColumnMappings;
+    private TextField pullMatchFieldField;
 
     private BiConsumer<String, String> navigator;
 
@@ -248,8 +253,9 @@ public class FormMappingPage {
         mainTableTab = createMainTableTab();
         queryTab = createQueryTab();
         subTablesTab = createSubTablesTab();
+        pullTab = createPullTab();
 
-        tabPane.getTabs().addAll(mainTableTab, queryTab, subTablesTab);
+        tabPane.getTabs().addAll(mainTableTab, queryTab, subTablesTab, pullTab);
 
         return tabPane;
     }
@@ -427,6 +433,104 @@ public class FormMappingPage {
         conditionsContainer.getChildren().add(editor.getContent());
     }
 
+    private Tab createPullTab() {
+        Tab tab = new Tab("拉取映射");
+        tab.getStyleClass().add("main-tab");
+
+        VBox content = new VBox(10);
+        content.setPadding(new Insets(12));
+        content.getStyleClass().add("tab-content");
+
+        Label descLabel = new Label("配置从简道云拉取数据到本地数据库的字段映射。映射方向：简道云控件ID → 数据库字段。");
+        descLabel.getStyleClass().add("description-label");
+        descLabel.setWrapText(true);
+
+        HBox matchFieldRow = new HBox(10);
+        matchFieldRow.setAlignment(Pos.CENTER_LEFT);
+        Label matchFieldLabel = new Label("匹配字段（数据库）：");
+        pullMatchFieldField = new TextField();
+        pullMatchFieldField.setPromptText("用于判断本地是否已存在记录的字段名，如 id 或 order_no");
+        pullMatchFieldField.setPrefWidth(300);
+        matchFieldRow.getChildren().addAll(matchFieldLabel, pullMatchFieldField);
+
+        VBox mappingCard = new VBox(10);
+        mappingCard.setPadding(new Insets(10));
+        mappingCard.getStyleClass().add("mapping-card");
+
+        Label mappingTitle = new Label("拉取字段映射（简道云控件ID → 数据库字段）");
+        mappingTitle.getStyleClass().add("section-title");
+
+        pullMappingTable = new TableView<>();
+        pullMappingTable.getStyleClass().add("data-table");
+        pullMappingTable.setEditable(true);
+        pullMappingTable.setPrefHeight(400);
+
+        TableColumn<ColumnMapping, String> widgetIdCol = new TableColumn<>("简道云控件ID");
+        widgetIdCol.setCellValueFactory(cell -> cell.getValue().widgetIdProperty());
+        widgetIdCol.setCellFactory(TextFieldTableCell.forTableColumn());
+        widgetIdCol.setOnEditCommit(e -> e.getRowValue().setWidgetId(e.getNewValue()));
+        widgetIdCol.setPrefWidth(250);
+
+        TableColumn<ColumnMapping, String> dbFieldCol = new TableColumn<>("数据库字段");
+        dbFieldCol.setCellValueFactory(cell -> cell.getValue().columnNameProperty());
+        dbFieldCol.setCellFactory(TextFieldTableCell.forTableColumn());
+        dbFieldCol.setOnEditCommit(e -> e.getRowValue().setColumnName(e.getNewValue()));
+        dbFieldCol.setPrefWidth(250);
+
+        pullMappingTable.getColumns().addAll(widgetIdCol, dbFieldCol);
+
+        HBox pullBtnBar = new HBox(10);
+        Button addPullRowBtn = new Button("添加行");
+        addPullRowBtn.getStyleClass().add("btn-secondary");
+        addPullRowBtn.setOnAction(e -> {
+            if (pullColumnMappings == null) pullColumnMappings = new ArrayList<>();
+            pullColumnMappings.add(new ColumnMapping("", "", "", ""));
+            pullMappingTable.getItems().setAll(pullColumnMappings);
+        });
+
+        Button removePullRowBtn = new Button("删除选中行");
+        removePullRowBtn.getStyleClass().add("btn-danger");
+        removePullRowBtn.setOnAction(e -> {
+            ColumnMapping selected = pullMappingTable.getSelectionModel().getSelectedItem();
+            if (selected != null && pullColumnMappings != null) {
+                pullColumnMappings.remove(selected);
+                pullMappingTable.getItems().setAll(pullColumnMappings);
+            }
+        });
+
+        Button autoFillPullBtn = new Button("从推送映射自动填充");
+        autoFillPullBtn.getStyleClass().add("btn-secondary");
+        autoFillPullBtn.setOnAction(e -> autoFillPullMapping());
+
+        pullBtnBar.getChildren().addAll(addPullRowBtn, removePullRowBtn, autoFillPullBtn);
+
+        mappingCard.getChildren().addAll(mappingTitle, pullMappingTable, pullBtnBar);
+        VBox.setVgrow(pullMappingTable, Priority.ALWAYS);
+
+        content.getChildren().addAll(descLabel, matchFieldRow, mappingCard);
+        VBox.setVgrow(mappingCard, Priority.ALWAYS);
+
+        tab.setContent(content);
+        return tab;
+    }
+
+    private void autoFillPullMapping() {
+        if (selectedMapping == null || mainColumnMappings == null) {
+            showStatus(false, "请先配置推送映射");
+            return;
+        }
+
+        pullColumnMappings = new ArrayList<>();
+        for (ColumnMapping cm : mainColumnMappings) {
+            if (cm.getWidgetId() != null && !cm.getWidgetId().trim().isEmpty()
+                    && cm.getColumnName() != null && !cm.getColumnName().trim().isEmpty()) {
+                pullColumnMappings.add(new ColumnMapping(cm.getColumnName().trim(), "", "", cm.getWidgetId().trim()));
+            }
+        }
+        pullMappingTable.getItems().setAll(pullColumnMappings);
+        showStatus(true, "已从推送映射自动填充 " + pullColumnMappings.size() + " 个字段");
+    }
+
     private Tab createSubTablesTab() {
         Tab tab = new Tab("子表映射");
         tab.getStyleClass().add("main-tab");
@@ -581,6 +685,15 @@ public class FormMappingPage {
             }
         }
         updateAllSubTableJoinConditionMainFields();
+
+        pullMatchFieldField.setText(mapping.getPullMatchField() != null ? mapping.getPullMatchField() : "");
+        pullColumnMappings = new ArrayList<>();
+        if (mapping.getPullFieldMapping() != null) {
+            for (Map.Entry<String, String> entry : mapping.getPullFieldMapping().entrySet()) {
+                pullColumnMappings.add(new ColumnMapping(entry.getValue(), "", "", entry.getKey()));
+            }
+        }
+        pullMappingTable.getItems().setAll(pullColumnMappings);
 
         conditionsContainer.getChildren().clear();
         queryConditionEditors.clear();
@@ -886,6 +999,19 @@ public class FormMappingPage {
         config.setQueryMatchConfig(queryConfig);
         config.setIncrementMode("自增ID".equals(incrementModeCombo.getValue()) ? "id" : "timestamp");
         config.setIncrementField(incrementFieldField.getText().trim());
+        config.setPullMatchField(pullMatchFieldField.getText().trim());
+
+        Map<String, String> pullMapping = new LinkedHashMap<>();
+        if (pullColumnMappings != null) {
+            for (ColumnMapping cm : pullColumnMappings) {
+                String widgetId = cm.getWidgetId();
+                String dbField = cm.getColumnName();
+                if (widgetId != null && !widgetId.trim().isEmpty() && dbField != null && !dbField.trim().isEmpty()) {
+                    pullMapping.put(widgetId.trim(), dbField.trim());
+                }
+            }
+        }
+        config.setPullFieldMapping(pullMapping);
     }
 
     private void persistMapping(FormMappingConfig mapping) {

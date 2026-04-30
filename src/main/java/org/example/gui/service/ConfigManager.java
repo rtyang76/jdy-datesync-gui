@@ -1,10 +1,13 @@
 package org.example.gui.service;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import org.example.gui.model.DataSourceConfig;
 import org.example.gui.model.JdyAppConfig;
+import org.example.gui.model.SyncConflictRecord;
 import org.example.gui.model.SyncProgress;
+import org.example.gui.model.SyncStatus;
 import org.example.gui.model.SyncTaskConfig;
 
 import org.example.gui.model.FormMappingConfig;
@@ -29,6 +32,8 @@ public class ConfigManager {
     private static final String SYNC_TASKS_FILE = "sync_tasks.json";
     private static final String SYNC_PROGRESS_FILE = "sync_progress.json";
     private static final String FORM_MAPPINGS_FILE = "form_mappings.json";
+    private static final String SYNC_CONFLICTS_FILE = "sync_conflicts.json";
+    private static final String SYNC_STATUS_FILE = "sync_status.json";
 
     private final Path configDir;
     private final ObjectMapper mapper;
@@ -38,6 +43,7 @@ public class ConfigManager {
         this.configDir = Paths.get(System.getProperty("user.home"), CONFIG_DIR);
         this.mapper = new ObjectMapper();
         this.mapper.enable(SerializationFeature.INDENT_OUTPUT);
+        this.mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         try {
             Files.createDirectories(configDir);
         } catch (IOException e) {
@@ -123,6 +129,41 @@ public class ConfigManager {
         if (id == null) return null;
         return loadFormMappings().stream()
                 .filter(f -> id.equals(f.getId()))
+                .findFirst().orElse(null);
+    }
+
+    public List<SyncConflictRecord> loadSyncConflicts() {
+        return loadConfig(SYNC_CONFLICTS_FILE, SyncConflictRecord[].class);
+    }
+
+    public void saveSyncConflicts(List<SyncConflictRecord> conflicts) {
+        saveConfig(SYNC_CONFLICTS_FILE, conflicts, "同步冲突记录");
+    }
+
+    public void addSyncConflict(SyncConflictRecord conflict) {
+        List<SyncConflictRecord> conflicts = new ArrayList<>(loadSyncConflicts());
+        conflicts.add(conflict);
+        saveSyncConflicts(conflicts);
+    }
+
+    public List<SyncStatus> loadSyncStatus() {
+        return loadConfig(SYNC_STATUS_FILE, SyncStatus[].class);
+    }
+
+    public void saveSyncStatus(List<SyncStatus> statuses) {
+        saveConfig(SYNC_STATUS_FILE, statuses, "同步状态");
+    }
+
+    public void updateSyncStatus(SyncStatus status) {
+        List<SyncStatus> statuses = new ArrayList<>(loadSyncStatus());
+        statuses.removeIf(s -> s.getTaskId() != null && s.getTaskId().equals(status.getTaskId()));
+        statuses.add(status);
+        saveSyncStatus(statuses);
+    }
+
+    public SyncStatus findSyncStatusByTaskId(String taskId) {
+        return loadSyncStatus().stream()
+                .filter(s -> s.getTaskId() != null && s.getTaskId().equals(taskId))
                 .findFirst().orElse(null);
     }
 

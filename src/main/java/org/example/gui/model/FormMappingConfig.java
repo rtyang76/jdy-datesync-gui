@@ -17,9 +17,12 @@ public class FormMappingConfig {
     private Map<String, String> mainFieldMapping;
     private List<SubTableMapping> subTableMappings;
     private QueryMatchConfig queryMatchConfig;
-    
+
     private String incrementMode;
     private String incrementField;
+
+    private Map<String, String> pullFieldMapping;
+    private String pullMatchField;
 
     public FormMappingConfig() {
         this.mainFieldMapping = new ConcurrentHashMap<>();
@@ -27,6 +30,7 @@ public class FormMappingConfig {
         this.queryMatchConfig = new QueryMatchConfig();
         this.incrementMode = "id";
         this.incrementField = "id";
+        this.pullFieldMapping = new ConcurrentHashMap<>();
     }
 
     public String getId() { return id; }
@@ -61,6 +65,12 @@ public class FormMappingConfig {
 
     public String getIncrementField() { return incrementField; }
     public void setIncrementField(String incrementField) { this.incrementField = incrementField; }
+
+    public Map<String, String> getPullFieldMapping() { return pullFieldMapping != null ? pullFieldMapping : new ConcurrentHashMap<>(); }
+    public void setPullFieldMapping(Map<String, String> pullFieldMapping) { this.pullFieldMapping = pullFieldMapping != null ? new ConcurrentHashMap<>(pullFieldMapping) : new ConcurrentHashMap<>(); }
+
+    public String getPullMatchField() { return pullMatchField; }
+    public void setPullMatchField(String pullMatchField) { this.pullMatchField = pullMatchField; }
 
     @Override
     public String toString() {

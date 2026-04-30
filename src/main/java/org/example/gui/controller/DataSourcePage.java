@@ -19,6 +19,7 @@ public class DataSourcePage {
     private final ConfigManager configManager;
     private final VBox root;
     private final ListView<DataSourceConfig> dataSourceList;
+    private final ComboBox<String> dbTypeCombo;
     private final TextField nameField;
     private final TextField hostField;
     private final Spinner<Integer> portSpinner;
@@ -40,6 +41,9 @@ public class DataSourcePage {
         this.root.setPadding(new Insets(25));
 
         this.dataSourceList = new ListView<>();
+        this.dbTypeCombo = new ComboBox<>();
+        this.dbTypeCombo.getItems().addAll("MySQL", "SQL Server");
+        this.dbTypeCombo.setValue("MySQL");
         this.nameField = new TextField();
         this.nameField.setPromptText("例如：生产数据库");
         this.hostField = new TextField();
@@ -96,7 +100,8 @@ public class DataSourcePage {
                 if (empty || item == null) {
                     setText(null);
                 } else {
-                    setText(item.getName());
+                    String typeTag = item.isSqlServer() ? "[SQLServer] " : "[MySQL] ";
+                    setText(typeTag + item.getName());
                 }
             }
         });
@@ -105,34 +110,38 @@ public class DataSourcePage {
 
         VBox formPanel = new VBox(15);
         HBox.setHgrow(formPanel, Priority.ALWAYS);
-        Label formTitle = new Label("MySQL 连接配置");
+        Label formTitle = new Label("数据库连接配置");
         formTitle.getStyleClass().add("section-title");
 
         GridPane grid = new GridPane();
         grid.setHgap(10);
         grid.setVgap(12);
 
-        grid.add(new Label("名称"), 0, 0);
-        grid.add(nameField, 1, 0);
+        grid.add(new Label("数据库类型"), 0, 0);
+        grid.add(dbTypeCombo, 1, 0);
+        GridPane.setHgrow(dbTypeCombo, Priority.ALWAYS);
+
+        grid.add(new Label("名称"), 0, 1);
+        grid.add(nameField, 1, 1);
         GridPane.setHgrow(nameField, Priority.ALWAYS);
 
-        grid.add(new Label("主机地址"), 0, 1);
-        grid.add(hostField, 1, 1);
+        grid.add(new Label("主机地址"), 0, 2);
+        grid.add(hostField, 1, 2);
         GridPane.setHgrow(hostField, Priority.ALWAYS);
 
-        grid.add(new Label("端口"), 0, 2);
-        grid.add(portSpinner, 1, 2);
+        grid.add(new Label("端口"), 0, 3);
+        grid.add(portSpinner, 1, 3);
 
-        grid.add(new Label("数据库名"), 0, 3);
-        grid.add(databaseField, 1, 3);
+        grid.add(new Label("数据库名"), 0, 4);
+        grid.add(databaseField, 1, 4);
         GridPane.setHgrow(databaseField, Priority.ALWAYS);
 
-        grid.add(new Label("用户名"), 0, 4);
-        grid.add(usernameField, 1, 4);
+        grid.add(new Label("用户名"), 0, 5);
+        grid.add(usernameField, 1, 5);
         GridPane.setHgrow(usernameField, Priority.ALWAYS);
 
-        grid.add(new Label("密码"), 0, 5);
-        grid.add(passwordField, 1, 5);
+        grid.add(new Label("密码"), 0, 6);
+        grid.add(passwordField, 1, 6);
         GridPane.setHgrow(passwordField, Priority.ALWAYS);
 
         ColumnConstraints col1 = new ColumnConstraints();
@@ -197,9 +206,17 @@ public class DataSourcePage {
         });
 
         loadTablesBtn.setOnAction(e -> loadTables());
+
+        dbTypeCombo.valueProperty().addListener((obs, old, newVal) -> {
+            if (newVal != null) {
+                int defaultPort = "SQL Server".equals(newVal) ? 1433 : 3306;
+                portSpinner.getValueFactory().setValue(defaultPort);
+            }
+        });
     }
 
     private void loadConfigToForm(DataSourceConfig config) {
+        dbTypeCombo.setValue(config.isSqlServer() ? "SQL Server" : "MySQL");
         nameField.setText(config.getName());
         hostField.setText(config.getHost());
         portSpinner.getValueFactory().setValue(config.getPort());
@@ -212,6 +229,7 @@ public class DataSourcePage {
 
     private void clearForm() {
         selectedConfig = null;
+        dbTypeCombo.setValue("MySQL");
         nameField.clear();
         hostField.clear();
         portSpinner.getValueFactory().setValue(3306);
@@ -228,7 +246,15 @@ public class DataSourcePage {
         dataSourceList.getItems().addAll(dataSources);
     }
 
+    private String resolveDbType(String displayValue) {
+        if ("SQL Server".equals(displayValue)) {
+            return DataSourceConfig.TYPE_SQLSERVER;
+        }
+        return DataSourceConfig.TYPE_MYSQL;
+    }
+
     private void saveConfig() {
+        String dbType = resolveDbType(dbTypeCombo.getValue());
         String name = nameField.getText().trim();
         String host = hostField.getText().trim();
         Integer port = portSpinner.getValue();
@@ -253,12 +279,13 @@ public class DataSourcePage {
             return;
         }
         if (port == null) {
-            port = 3306;
+            port = DataSourceConfig.TYPE_SQLSERVER.equals(dbType) ? 1433 : 3306;
         }
 
         if (selectedConfig == null) {
             DataSourceConfig config = new DataSourceConfig();
             config.setId(UUID.randomUUID().toString());
+            config.setDbType(dbType);
             config.setName(name);
             config.setHost(host);
             config.setPort(port);
@@ -268,6 +295,7 @@ public class DataSourcePage {
             dataSources.add(config);
             selectedConfig = config;
         } else {
+            selectedConfig.setDbType(dbType);
             selectedConfig.setName(name);
             selectedConfig.setHost(host);
             selectedConfig.setPort(port);
@@ -310,6 +338,7 @@ public class DataSourcePage {
             config = selectedConfig;
         } else {
             config = new DataSourceConfig();
+            config.setDbType(resolveDbType(dbTypeCombo.getValue()));
             config.setHost(hostField.getText().trim());
             config.setPort(portSpinner.getValue() != null ? portSpinner.getValue() : 3306);
             config.setDatabase(databaseField.getText().trim());

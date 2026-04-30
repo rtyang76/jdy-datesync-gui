@@ -24,18 +24,24 @@ public class JdbcUtils {
     }
 
     public static Connection getConnection(DataSourceConfig ds) throws SQLException {
+        try {
+            Class.forName(ds.getDriverClassName());
+        } catch (ClassNotFoundException e) {
+            throw new SQLException("数据库驱动未找到: " + ds.getDriverClassName(), e);
+        }
         return DriverManager.getConnection(ds.getJdbcUrl(), ds.getUsername(), ds.getPassword());
     }
 
     public static List<ColumnDetail> loadColumnDetails(DataSourceConfig ds, String tableName) throws SQLException {
         try (Connection conn = getConnection(ds)) {
-            return loadColumnDetails(conn, ds.getDatabase(), tableName);
+            return loadColumnDetails(conn, ds, tableName);
         }
     }
 
-    public static List<ColumnDetail> loadColumnDetails(Connection conn, String database, String tableName) throws SQLException {
+    public static List<ColumnDetail> loadColumnDetails(Connection conn, DataSourceConfig ds, String tableName) throws SQLException {
         List<ColumnDetail> details = new ArrayList<>();
-        try (ResultSet rs = conn.getMetaData().getColumns(database, null, tableName, "%")) {
+        String schemaPattern = ds.isSqlServer() ? "dbo" : ds.getDatabase();
+        try (ResultSet rs = conn.getMetaData().getColumns(ds.getDatabase(), schemaPattern, tableName, "%")) {
             while (rs.next()) {
                 details.add(new ColumnDetail(
                         rs.getString("COLUMN_NAME"),

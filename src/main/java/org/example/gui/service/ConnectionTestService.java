@@ -13,9 +13,10 @@ public class ConnectionTestService {
 
     public static TestResult testConnection(DataSourceConfig config) {
         try {
-            Class.forName("com.mysql.cj.jdbc.Driver");
+            Class.forName(config.getDriverClassName());
         } catch (ClassNotFoundException e) {
-            return new TestResult(false, "找不到 MySQL 驱动");
+            String dbLabel = config.isSqlServer() ? "SQL Server" : "MySQL";
+            return new TestResult(false, "找不到 " + dbLabel + " 驱动");
         }
 
         try (Connection conn = JdbcUtils.getConnection(config)) {
@@ -30,7 +31,9 @@ public class ConnectionTestService {
     public static List<String> fetchTableList(DataSourceConfig config) {
         List<String> tables = new ArrayList<>();
         try (Connection conn = JdbcUtils.getConnection(config)) {
-            ResultSet rs = conn.getMetaData().getTables(config.getDatabase(), null, "%", new String[]{"TABLE"});
+            String[] tableTypes = {"TABLE"};
+            String schema = config.isSqlServer() ? "dbo" : config.getDatabase();
+            ResultSet rs = conn.getMetaData().getTables(config.getDatabase(), schema, "%", tableTypes);
             while (rs.next()) {
                 tables.add(rs.getString("TABLE_NAME"));
             }

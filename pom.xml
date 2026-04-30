@@ -23,6 +23,11 @@
             <version>8.3.0</version>
         </dependency>
         <dependency>
+            <groupId>com.microsoft.sqlserver</groupId>
+            <artifactId>mssql-jdbc</artifactId>
+            <version>12.4.2.jre11</version>
+        </dependency>
+        <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
             <version>2.16.1</version>
@@ -62,6 +67,12 @@
                 <version>0.0.8</version>
                 <configuration>
                     <mainClass>org.example.gui.MainApp</mainClass>
+                    <options>
+                        <option>--add-exports</option>
+                        <option>java.desktop/com.apple.eawt=ALL-UNNAMED</option>
+                        <option>--add-exports</option>
+                        <option>java.desktop/com.apple.eawt.event=ALL-UNNAMED</option>
+                    </options>
                 </configuration>
             </plugin>
             <plugin>

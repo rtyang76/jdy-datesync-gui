@@ -47,6 +47,7 @@ public class MainWindow {
         syncTaskPage.setNavigator(navigator);
         formMappingPage = new FormMappingPage(configManager);
         formMappingPage.setNavigator(navigator);
+        logPage = new LogPage();
 
         showPage("dataSource");
         taskScheduler.startAll();
@@ -125,7 +126,6 @@ public class MainWindow {
                 contentArea.getChildren().setAll(syncTaskPage.getContent());
                 break;
             case "log":
-                if (logPage == null) logPage = new LogPage();
                 contentArea.getChildren().setAll(logPage.getContent());
                 break;
         }
@@ -182,5 +182,11 @@ public class MainWindow {
 
     public void shutdown() {
         taskScheduler.shutdown();
+    }
+
+    public void hideStatus() {
+    }
+
+    public void showStatus() {
     }
 }

@@ -37,6 +37,7 @@ public class SyncTaskPage {
     private final Spinner<Integer> batchSizeSpinner;
     private final Spinner<Integer> retrySpinner;
     private final CheckBox enabledCheck;
+    private final ComboBox<String> directionCombo;
     private final Label statusLabel;
     private final HBox breadcrumbBar;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -77,6 +78,9 @@ public class SyncTaskPage {
         this.retrySpinner.setEditable(true);
         this.enabledCheck = new CheckBox("启用");
         this.enabledCheck.setSelected(true);
+        this.directionCombo = new ComboBox<>();
+        this.directionCombo.getItems().addAll("推送（本地→简道云）", "拉取（简道云→本地）", "双向同步");
+        this.directionCombo.setValue("推送（本地→简道云）");
         this.statusLabel = new Label();
         this.statusLabel.getStyleClass().add("status-label");
         this.breadcrumbBar = new HBox(10);
@@ -184,17 +188,21 @@ public class SyncTaskPage {
         grid.add(mappingBox, 1, 1);
         GridPane.setHgrow(mappingBox, Priority.ALWAYS);
 
-        grid.add(new Separator(), 0, 2);
+        grid.add(new Label("同步方向"), 0, 3);
+        grid.add(directionCombo, 1, 3);
+        GridPane.setHgrow(directionCombo, Priority.ALWAYS);
+
+        grid.add(new Separator(), 0, 4);
         GridPane.setColumnSpan(grid.getChildren().get(grid.getChildren().size() - 1), 2);
 
-        grid.add(new Label("同步间隔(分钟)"), 0, 3);
-        grid.add(intervalSpinner, 1, 3);
+        grid.add(new Label("同步间隔(分钟)"), 0, 5);
+        grid.add(intervalSpinner, 1, 5);
 
-        grid.add(new Label("批量大小"), 0, 4);
-        grid.add(batchSizeSpinner, 1, 4);
+        grid.add(new Label("批量大小"), 0, 6);
+        grid.add(batchSizeSpinner, 1, 6);
 
-        grid.add(new Label("最大重试次数"), 0, 5);
-        grid.add(retrySpinner, 1, 5);
+        grid.add(new Label("最大重试次数"), 0, 7);
+        grid.add(retrySpinner, 1, 7);
 
         ColumnConstraints col1 = new ColumnConstraints();
         col1.setMinWidth(120);
@@ -463,11 +471,22 @@ public class SyncTaskPage {
         intervalCol.setCellValueFactory(cell -> new javafx.beans.property.SimpleStringProperty(String.valueOf(cell.getValue().getSyncIntervalMinutes())));
         intervalCol.setPrefWidth(70);
 
+        TableColumn<SyncTaskConfig, String> directionCol = new TableColumn<>("方向");
+        directionCol.setCellValueFactory(cell -> {
+            String dir = cell.getValue().getSyncDirection();
+            String display;
+            if (SyncTaskConfig.DIRECTION_PULL.equals(dir)) display = "拉取";
+            else if (SyncTaskConfig.DIRECTION_BOTH.equals(dir)) display = "双向";
+            else display = "推送";
+            return new javafx.beans.property.SimpleStringProperty(display);
+        });
+        directionCol.setPrefWidth(60);
+
         TableColumn<SyncTaskConfig, String> statusCol = new TableColumn<>("状态");
         statusCol.setCellValueFactory(cell -> new javafx.beans.property.SimpleStringProperty(cell.getValue().isEnabled() ? "启用" : "禁用"));
         statusCol.setPrefWidth(60);
 
-        taskTable.getColumns().addAll(nameCol, mappingCol, intervalCol, statusCol);
+        taskTable.getColumns().addAll(nameCol, mappingCol, intervalCol, directionCol, statusCol);
     }
 
     private void loadTaskToForm(SyncTaskConfig task) {
@@ -490,6 +509,7 @@ public class SyncTaskPage {
         batchSizeSpinner.getValueFactory().setValue(task.getMaxBatchSize());
         retrySpinner.getValueFactory().setValue(task.getMaxRetry());
         enabledCheck.setSelected(task.isEnabled());
+        directionCombo.setValue(directionToDisplay(task.getSyncDirection()));
 
         statusLabel.setText("");
         updateBreadcrumb();
@@ -505,6 +525,7 @@ public class SyncTaskPage {
         batchSizeSpinner.getValueFactory().setValue(50);
         retrySpinner.getValueFactory().setValue(3);
         enabledCheck.setSelected(true);
+        directionCombo.setValue("推送（本地→简道云）");
         statusLabel.setText("");
         updateBreadcrumb();
         showFormPanel(false);
@@ -537,6 +558,7 @@ public class SyncTaskPage {
             task.setId(UUID.randomUUID().toString());
             task.setName(name);
             task.setFormMappingIds(mappingIds);
+            task.setSyncDirection(displayToDirection(directionCombo.getValue()));
             task.setSyncIntervalMinutes(intervalSpinner.getValue());
             task.setMaxBatchSize(batchSizeSpinner.getValue());
             task.setMaxRetry(retrySpinner.getValue());
@@ -546,6 +568,7 @@ public class SyncTaskPage {
         } else {
             selectedTask.setName(name);
             selectedTask.setFormMappingIds(mappingIds);
+            selectedTask.setSyncDirection(displayToDirection(directionCombo.getValue()));
             selectedTask.setSyncIntervalMinutes(intervalSpinner.getValue());
             selectedTask.setMaxBatchSize(batchSizeSpinner.getValue());
             selectedTask.setMaxRetry(retrySpinner.getValue());
@@ -620,5 +643,18 @@ public class SyncTaskPage {
 
     public VBox getContent() {
         return root;
+    }
+
+    private String directionToDisplay(String direction) {
+        if (SyncTaskConfig.DIRECTION_PULL.equals(direction)) return "拉取（简道云→本地）";
+        if (SyncTaskConfig.DIRECTION_BOTH.equals(direction)) return "双向同步";
+        return "推送（本地→简道云）";
+    }
+
+    private String displayToDirection(String display) {
+        if (display == null) return SyncTaskConfig.DIRECTION_PUSH;
+        if (display.startsWith("拉取")) return SyncTaskConfig.DIRECTION_PULL;
+        if (display.startsWith("双向")) return SyncTaskConfig.DIRECTION_BOTH;
+        return SyncTaskConfig.DIRECTION_PUSH;
     }
 }
